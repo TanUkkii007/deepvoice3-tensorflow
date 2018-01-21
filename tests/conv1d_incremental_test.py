@@ -49,7 +49,7 @@ class Conv1dIncrementalTest(tf.test.TestCase):
         # B, T, C
         btc = tf.transpose(bct, perm=[0, 2, 1])
         filter = tf.Variable(initial_value=tf.ones(shape=[C * 2, C, kernel_size]))
-        conv1d_incremental = Conv1dIncremental(filter, C, C * 2, kernel_size=kernel_size)
+        conv1d_incremental = Conv1dIncremental(filter, C, C * 2, kernel_size=kernel_size, dilation=dilation)
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
@@ -72,12 +72,11 @@ class Conv1dIncrementalTest(tf.test.TestCase):
         # ToDo: causal_conv does not provide full time series. Its padding is not enough.
         self.assertAllEqual(output_causal_conv, output_conv_online)
 
-
     def test_conv1d_incremental(self):
         for B in [1]:
-            for T in [10, 20, 30]:
-                for C in [1, 2]:
+            for T in [10]:
+                for C in [1, 2, 4]:
                     for kernel_size in [2, 3, 4, 5, 6, 7, 8, 9]:
-                        for dilation in [1]:
+                        for dilation in [1, 2, 3, 4, 5, 6, 7, 8, 9, 27]:
                             with self.subTest(B=B, T=T, C=C, kernel_size=kernel_size, dilation=dilation):
                                 self.__test_conv1d_incremental(kernel_size, dilation, T, B, C)

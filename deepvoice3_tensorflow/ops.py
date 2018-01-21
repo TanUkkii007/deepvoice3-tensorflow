@@ -46,17 +46,7 @@ def causal_conv(value, filter_, dilation, name='causal_conv'):
     '''
     with tf.name_scope(name):
         filter_width = tf.shape(filter_)[0]
-        # ToDo: use tf.nn.convolution
-        #restored = tf.nn.convolution(value, filter_, padding='VALID', dilation_rate=[dilation])
-        if dilation > 1:
-            transformed = time_to_batch(value, dilation)
-            conv = tf.nn.conv1d(transformed, filter_, stride=1, padding='VALID')
-            restored = batch_to_time(conv, dilation)
-        else:
-            # dilation=1 has no effect to time_to_batch/batch_to_time transform
-            # input size is [batch, in_width, in_channels].
-            # This is different from "NHWC" data format of pytorch: (N, C_{in}, L).
-            restored = tf.nn.conv1d(value, filter_, stride=1, padding='VALID')
+        restored = tf.nn.convolution(value, filter_, padding='VALID', dilation_rate=[dilation])
         # Remove excess elements at the end.
         out_width = tf.shape(value)[1] - (filter_width - 1) * dilation
         # [batch, out_width, out_channels]
@@ -110,9 +100,9 @@ class Conv1dIncremental(tf.layers.Layer):
                 [tf.slice(input_buffer, begin=[0, 1, 0], size=[-1, -1, -1]),
                  tf.slice(inputs, begin=[0, tf.shape(inputs)[1] - 1, 0], size=[-1, -1, -1])],
                 axis=1)
-            # ToDo: generalize for dilation > 1
-            # if dilation > 1:
-            #     input_buffer = input_buffer[:, 0::dilation, :]
+            next_input_buffer = input_buffer
+            if dilation > 1:
+                input_buffer = input_buffer[:, 0::dilation, :]
 
         # (out_channels, kernel_size * in_channels)
         weight = tf.reshape(self.weight, shape=[self.out_channels, -1])
@@ -122,6 +112,4 @@ class Conv1dIncremental(tf.layers.Layer):
         if self.bias is not None:
             output = output + self.bias
         output = tf.reshape(output, shape=[self.batch_size, 1, -1])
-        return output, input_buffer
-
-
+        return output, next_input_buffer
