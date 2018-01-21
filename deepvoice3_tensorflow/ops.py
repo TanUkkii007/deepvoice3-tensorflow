@@ -4,10 +4,10 @@ import tensorflow as tf
 def time_to_batch(value, dilation, name='time_to_batch'):
     '''
 
-    :param value: (T, B, C)
+    :param value: (B, T, C)
     :param dilation:
     :param name:
-    :return: (T * dilation, B / dilation, C)
+    :return: (B * dilation, T / dilation, C)
     '''
     with tf.name_scope(name):
         shape = tf.shape(value)
@@ -38,23 +38,90 @@ def batch_to_time(value, dilation, name='batch_to_time'):
 def causal_conv(value, filter_, dilation, name='causal_conv'):
     '''
 
-    :param value: (T, B, C)
-    :param filter_:
+    :param value: (B, T, C)
+    :param filter_: (filter_width, in_channels, out_channels)
     :param dilation:
     :param name:
     :return:
     '''
     with tf.name_scope(name):
         filter_width = tf.shape(filter_)[0]
+        # ToDo: use tf.nn.convolution
+        #restored = tf.nn.convolution(value, filter_, padding='VALID', dilation_rate=[dilation])
         if dilation > 1:
             transformed = time_to_batch(value, dilation)
             conv = tf.nn.conv1d(transformed, filter_, stride=1, padding='VALID')
             restored = batch_to_time(conv, dilation)
         else:
             # dilation=1 has no effect to time_to_batch/batch_to_time transform
+            # input size is [batch, in_width, in_channels].
+            # This is different from "NHWC" data format of pytorch: (N, C_{in}, L).
             restored = tf.nn.conv1d(value, filter_, stride=1, padding='VALID')
         # Remove excess elements at the end.
         out_width = tf.shape(value)[1] - (filter_width - 1) * dilation
+        # [batch, out_width, out_channels]
         result = tf.slice(restored, [0, 0, 0], [-1, out_width, -1])
         return result
+
+
+class Conv1dIncremental(tf.layers.Layer):
+    def __init__(self, weight, in_channels, out_channels, kernel_size, dilation=1, bias=None, name="conv1d_incremental",
+                 trainable=True, **kwargs):
+        '''
+
+        :param weight: (out_channels, in_channels, kernel_size)
+        :param in_channels:
+        :param out_channels:
+        :param kernel_size:
+        :param dilation:
+        :param bias:
+        :param name:
+        :param trainable:
+        :param kwargs:
+        '''
+        super(Conv1dIncremental, self).__init__(name=name, trainable=trainable, **kwargs)
+        # (out_channels, in_channels, kernel_size)
+        self.weight = weight
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.bias = bias
+
+    def build(self, input_shape):
+        # input: bsz x len x dim
+        self.batch_size = input_shape[0]
+        self.shape_c = input_shape[2]
+        with tf.control_dependencies(
+                [tf.assert_equal(tf.shape(self.weight), (self.out_channels, self.in_channels, self.kernel_size))]):
+            super(Conv1dIncremental, self).build(input_shape)
+
+    def call(self, inputs, training=False, input_buffer=None):
+        # input: (B, T, C)
+        if training:
+            raise RuntimeError('Conv1dIncremental only supports eval mode')
+        kw = self.kernel_size
+        dilation = self.dilation
+        if kw > 1:
+            if input_buffer is None:
+                input_buffer = tf.zeros(shape=[self.batch_size, kw + (kw - 1) * (dilation - 1), self.shape_c])
+            # append next input
+            input_buffer = tf.concat(
+                [tf.slice(input_buffer, begin=[0, 1, 0], size=[-1, -1, -1]),
+                 tf.slice(inputs, begin=[0, tf.shape(inputs)[1] - 1, 0], size=[-1, -1, -1])],
+                axis=1)
+            # ToDo: generalize for dilation > 1
+            # if dilation > 1:
+            #     input_buffer = input_buffer[:, 0::dilation, :]
+
+        # (out_channels, kernel_size * in_channels)
+        weight = tf.reshape(self.weight, shape=[self.out_channels, -1])
+        # (batch_size, T*C)
+        inputs = tf.reshape(input_buffer, shape=[self.batch_size, -1])
+        output = tf.matmul(inputs, tf.transpose(weight))
+        if self.bias is not None:
+            output = output + self.bias
+        output = tf.reshape(output, shape=[self.batch_size, 1, -1])
+        return output, input_buffer
+
 
