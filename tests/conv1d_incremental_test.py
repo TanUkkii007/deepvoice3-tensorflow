@@ -1,11 +1,15 @@
 import tensorflow as tf
 import numpy as np
+from hypothesis import given, assume, settings, unlimited
+from hypothesis.strategies import integers
 from deepvoice3_tensorflow.ops import causal_conv, Conv1dIncremental
 
 
 class Conv1dIncrementalTest(tf.test.TestCase):
 
-    def __test_causal_conv(self, n, dilation):
+    @given(n=integers(5, 20), dilation=integers(1, 20))
+    def test_causal_conv(self, n, dilation):
+        assume(n - dilation - 1 > 0)
         filter = [1, 1]
         x1 = np.arange(1, n, dtype=np.float32)
         x = np.append(x1, x1)
@@ -24,14 +28,9 @@ class Conv1dIncrementalTest(tf.test.TestCase):
 
         self.assertAllEqual(ref, result)
 
-    def test_causal_conv(self):
-        for n in [5, 11, 21]:
-            for dilation in [1, 2, 3, 4, 5, 6]:
-                if n - dilation - 1 > 0:
-                    with self.subTest(n=n, dilation=dilation):
-                        self.__test_causal_conv(n, dilation)
-
-    def __test_conv1d_incremental(self, kernel_size, dilation, T, B, C):
+    @given(B=integers(1, 3), T=integers(10, 30), C=integers(1, 4), kernel_size=integers(2, 9), dilation=integers(1, 27))
+    @settings(max_examples=10, timeout=unlimited)
+    def test_conv1d_incremental(self, kernel_size, dilation, T, B, C):
 
         bct_value = np.zeros(shape=[B, C, T], dtype=np.float32) + (
                 np.zeros(shape=[C, T], dtype=np.float32) + np.arange(0, T, dtype=np.float32))
@@ -69,14 +68,4 @@ class Conv1dIncrementalTest(tf.test.TestCase):
 
         print(output_conv_online)
 
-        # ToDo: causal_conv does not provide full time series. Its padding is not enough.
         self.assertAllEqual(output_causal_conv, output_conv_online)
-
-    def test_conv1d_incremental(self):
-        for B in [1]:
-            for T in [10]:
-                for C in [1, 2, 4]:
-                    for kernel_size in [2, 3, 4, 5, 6, 7, 8, 9]:
-                        for dilation in [1, 2, 3, 4, 5, 6, 7, 8, 9, 27]:
-                            with self.subTest(B=B, T=T, C=C, kernel_size=kernel_size, dilation=dilation):
-                                self.__test_conv1d_incremental(kernel_size, dilation, T, B, C)
