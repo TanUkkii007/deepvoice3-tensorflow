@@ -37,28 +37,31 @@ class Conv1dIncrementalTest(tf.test.TestCase):
         btc_value = bct_value.transpose((0, 2, 1))
         # padding to ensure no time shift
         padding = (kernel_size - 1) * dilation
-        btc_value = np.pad(btc_value, [[0, 0], [padding, 0], [0, 0]], 'constant')
+        btc_value_pad = np.pad(btc_value, [[0, 0], [padding, 0], [0, 0]], 'constant')
         filter_value = np.ones(shape=[C * 2, C, kernel_size], dtype=np.float32)
-        out = causal_conv(btc_value, filter_value.transpose([2, 1, 0]), dilation)
+        out = causal_conv(btc_value_pad, filter_value.transpose([2, 1, 0]), dilation)
         with self.test_session() as sess:
             output_causal_conv = sess.run(out)
             print(output_causal_conv)
 
-        bct = tf.Variable(initial_value=tf.zeros([B, C, T]) + tf.range(0, T, dtype=tf.float32), trainable=False)
-        # B, T, C
-        btc = tf.transpose(bct, perm=[0, 2, 1])
+
+        btc_one = tf.placeholder(dtype=tf.float32, shape=[B, 1, C])
         filter = tf.Variable(initial_value=tf.ones(shape=[C * 2, C, kernel_size]))
         conv1d_incremental = Conv1dIncremental(filter, C, C * 2, kernel_size=kernel_size, dilation=dilation)
+        buffer_size = kernel_size + (kernel_size - 1) * (dilation - 1)
+        input_buffer_pf = tf.placeholder(dtype=tf.float32, shape=[B, buffer_size, C])
+        output_conv, next_input_buffer = conv1d_incremental.apply(btc_one, training=False,                                                                  input_buffer=input_buffer_pf)
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
             output_conv_online = []
-            input_buffer = None
+            input_buffer = np.zeros(shape=[B, buffer_size, C], dtype=np.float32)
+
             for t in range(T):
-                inputs = tf.reshape(btc[:, t, :], shape=(B, -1, C))
-                output_conv = conv1d_incremental.apply(inputs, training=False, input_buffer=input_buffer)
-                result, input_buffer = sess.run(output_conv)
-                input_buffer = tf.constant(input_buffer)
+                result, input_buffer = sess.run([output_conv, next_input_buffer], feed_dict={
+                    btc_one: btc_value[:, t, :].reshape(B, -1, C),
+                    input_buffer_pf: input_buffer
+                })
                 output_conv_online += [result]
 
         print(len(output_conv_online))

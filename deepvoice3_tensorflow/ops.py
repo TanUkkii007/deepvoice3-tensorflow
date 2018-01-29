@@ -54,6 +54,8 @@ def causal_conv(value, filter_, dilation, name='causal_conv'):
         return result
 
 
+# ToDo: do not use tf.layers.Layer. see tf.nn.convolution.
+# ToDo: remove bias option
 class Conv1dIncremental(tf.layers.Layer):
     def __init__(self, weight, in_channels, out_channels, kernel_size, dilation=1, bias=None, name="conv1d_incremental",
                  trainable=True, **kwargs):
@@ -104,12 +106,14 @@ class Conv1dIncremental(tf.layers.Layer):
             if dilation > 1:
                 input_buffer = input_buffer[:, 0::dilation, :]
 
-        # (out_channels, kernel_size * in_channels)
+        # (out_channels, dilation(kernel_size) * in_channels)
         weight = tf.reshape(self.weight, shape=[self.out_channels, -1])
-        # (batch_size, T*C)
+        # (batch_size, dilation(kernel_size) * in_channels)
         inputs = tf.reshape(input_buffer, shape=[self.batch_size, -1])
+        # (batch_size, out_channels)
         output = tf.matmul(inputs, tf.transpose(weight))
         if self.bias is not None:
             output = output + self.bias
+        # (batch_size, 1, out_channels)
         output = tf.reshape(output, shape=[self.batch_size, 1, -1])
         return output, next_input_buffer
