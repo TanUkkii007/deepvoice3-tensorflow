@@ -88,26 +88,29 @@ class Conv1dIncremental(tf.layers.Layer):
                 [tf.assert_equal(tf.shape(self.weight), (self.out_channels, self.in_channels, self.kernel_size))]):
             super(Conv1dIncremental, self).build(input_shape)
 
-    def call(self, inputs, training=False, input_buffer=None):
-        # input: (B, T, C)
+    def call(self, inputs, input_buffer=None, training=False):
+        # input: (B, T, C) where T=1
         if training:
             raise RuntimeError('Conv1dIncremental only supports eval mode')
+        if input_buffer is None:
+            raise ValueError("input_buffer tensor is required")
         kw = self.kernel_size
         dilation = self.dilation
         if kw > 1:
-            if input_buffer is None:
-                input_buffer = tf.zeros(shape=[self.batch_size, kw + (kw - 1) * (dilation - 1), self.shape_c])
+            input_buffer = tf.slice(input_buffer, begin=[0, 1, 0], size=[-1, -1, -1])
             # append next input
             input_buffer = tf.concat(
-                [tf.slice(input_buffer, begin=[0, 1, 0], size=[-1, -1, -1]),
+                [input_buffer,
                  tf.slice(inputs, begin=[0, tf.shape(inputs)[1] - 1, 0], size=[-1, -1, -1])],
                 axis=1)
             next_input_buffer = input_buffer
             if dilation > 1:
                 input_buffer = input_buffer[:, 0::dilation, :]
 
+        # (out_channels, in_channels, dilation(kernel_size))
+        weight = tf.transpose(self.weight, perm=[0, 2, 1])
         # (out_channels, dilation(kernel_size) * in_channels)
-        weight = tf.reshape(self.weight, shape=[self.out_channels, -1])
+        weight = tf.reshape(weight, shape=[self.out_channels, -1])
         # (batch_size, dilation(kernel_size) * in_channels)
         inputs = tf.reshape(input_buffer, shape=[self.batch_size, -1])
         # (batch_size, out_channels)
@@ -117,3 +120,9 @@ class Conv1dIncremental(tf.layers.Layer):
         # (batch_size, 1, out_channels)
         output = tf.reshape(output, shape=[self.batch_size, 1, -1])
         return output, next_input_buffer
+
+    def initial_input_buffer(self):
+        kw = self.kernel_size
+        input_buffer = tf.zeros(shape=[self.batch_size, kw + (kw - 1) * (self.dilation - 1), self.shape_c])
+        return input_buffer
+

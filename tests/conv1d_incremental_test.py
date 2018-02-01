@@ -31,26 +31,26 @@ class Conv1dIncrementalTest(tf.test.TestCase):
     @given(B=integers(1, 3), T=integers(10, 30), C=integers(1, 4), kernel_size=integers(2, 9), dilation=integers(1, 27))
     @settings(max_examples=10, timeout=unlimited)
     def test_conv1d_incremental(self, kernel_size, dilation, T, B, C):
-
         bct_value = np.zeros(shape=[B, C, T], dtype=np.float32) + (
                 np.zeros(shape=[C, T], dtype=np.float32) + np.arange(0, T, dtype=np.float32))
         btc_value = bct_value.transpose((0, 2, 1))
         # padding to ensure no time shift
         padding = (kernel_size - 1) * dilation
         btc_value_pad = np.pad(btc_value, [[0, 0], [padding, 0], [0, 0]], 'constant')
-        filter_value = np.ones(shape=[C * 2, C, kernel_size], dtype=np.float32)
+        filter_value = np.arange(0, kernel_size * C * 2 * C, dtype=np.float32).reshape(C * 2, C, kernel_size)
+
         out = causal_conv(btc_value_pad, filter_value.transpose([2, 1, 0]), dilation)
         with self.test_session() as sess:
             output_causal_conv = sess.run(out)
             print(output_causal_conv)
 
-
         btc_one = tf.placeholder(dtype=tf.float32, shape=[B, 1, C])
-        filter = tf.Variable(initial_value=tf.ones(shape=[C * 2, C, kernel_size]))
+        filter = tf.Variable(
+            initial_value=np.arange(0, kernel_size * C * 2 * C, dtype=np.float32).reshape(C * 2, C, kernel_size))
         conv1d_incremental = Conv1dIncremental(filter, C, C * 2, kernel_size=kernel_size, dilation=dilation)
         buffer_size = kernel_size + (kernel_size - 1) * (dilation - 1)
         input_buffer_pf = tf.placeholder(dtype=tf.float32, shape=[B, buffer_size, C])
-        output_conv, next_input_buffer = conv1d_incremental.apply(btc_one, training=False,                                                                  input_buffer=input_buffer_pf)
+        output_conv, next_input_buffer = conv1d_incremental.apply(btc_one, input_buffer=input_buffer_pf, training=False)
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
