@@ -1,5 +1,6 @@
 import tensorflow as tf
 from .ops import causal_conv, Conv1dIncremental
+from .weight_normalization import weight_normalization
 import math
 
 
@@ -21,7 +22,7 @@ def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embeddin
 
 def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, activation, is_incremental, is_training,
             scope,
-            input_buffer=None, dropout=0, std_mul=4.0, kernel_initializer=None, bias_initializer=None):
+            input_buffer=None, dropout=0, std_mul=4.0, kernel_initializer=None, bias_initializer=None, normalize_weight=False):
     with tf.variable_scope(scope):
         if padding > 0:
             inputs = tf.pad(inputs, [[0, 0], [padding, 0], [0, 0]], 'constant')
@@ -32,9 +33,13 @@ def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, a
             std = math.sqrt((std_mul * (1.0 - dropout)) / (float(kernel_size) * in_channels))
             kernel_initializer = tf.truncated_normal_initializer(mean=0.,
                                                                  stddev=std) if kernel_initializer is None else kernel_initializer
+            kernel_trainability = not normalize_weight
             kernel = tf.get_variable("kernel",
                                      shape=[kernel_size, in_channels, out_channels],
-                                     initializer=kernel_initializer)
+                                     initializer=kernel_initializer,
+                                     trainable=kernel_trainability)
+            if normalize_weight:
+               kernel = weight_normalization(kernel)
             bias_initializer = tf.zeros_initializer() if bias_initializer is None else bias_initializer
             bias = tf.get_variable("bias",
                                    shape=(1, 1, out_channels),
@@ -49,8 +54,6 @@ def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, a
 
             ha = activation(conv1d_output + bias)
 
-            # ToDo: use weight normalization
-            # return tf.layers.batch_normalization(ha, is_training)
             if is_incremental:
                 return ha, next_input_buffer
             else:

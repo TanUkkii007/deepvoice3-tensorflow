@@ -14,6 +14,7 @@ setup(name='deepvoice3_tensorflow',
       extras_require={
           "test": [
               "hypothesis",
+              "hypothesis[numpy]"
               "pylint",
           ]
       }
