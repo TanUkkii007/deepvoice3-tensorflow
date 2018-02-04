@@ -10,14 +10,14 @@ class WeightNormalization(tf.layers.Layer):
 
     def build(self, weight_shape):
         # add g and v as new parameters and express w as g/||v|| * v
-        self.g = tf.Variable(self.g_norm(), name="g")
+        self.g = tf.Variable(self.initial_g(), name="g")
         self.v = tf.Variable(self.weight_value, name="v")
         self.built = True
 
     def call(self, weight, training=False):
         return self.compute_weight()
 
-    def g_norm(self):
+    def initial_g(self):
         norm = tf.norm(self.weight_value, axis=self.dimension)
         return norm
 
