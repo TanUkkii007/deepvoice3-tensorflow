@@ -22,7 +22,7 @@ def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embeddin
 
 def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, activation, is_incremental, is_training,
             scope,
-            input_buffer=None, dropout=1, std_mul=4.0, kernel_initializer=None, bias_initializer=None,
+            input_buffer=None, dropout=1, kernel_initializer=None, bias_initializer=None,
             normalize_weight=False):
     with tf.variable_scope(scope):
         if padding > 0:
@@ -31,7 +31,8 @@ def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, a
         with tf.control_dependencies([
             tf.assert_equal(in_channels, in_channels_tensor)
         ]):
-            std = math.sqrt((std_mul * dropout) / (float(kernel_size) * in_channels))
+            std_factor = 4.0 if normalize_weight else 1.0
+            std = math.sqrt((std_factor * dropout) / (float(kernel_size) * in_channels))
             kernel_initializer = tf.truncated_normal_initializer(mean=0.,
                                                                  stddev=std) if kernel_initializer is None else kernel_initializer
             kernel_trainability = not normalize_weight
@@ -62,24 +63,23 @@ def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, a
 
 
 def conv1d(inputs, in_channels, out_channels, kernel_size, dilation, activation, is_training, scope="_conv1d",
-           dropout=1,
-           std_mul=4.0, kernel_initializer=None, bias_initializer=None):
+           dropout=1, kernel_initializer=None, bias_initializer=None, normalize_weight=False):
     padding = (kernel_size - 1) * dilation
     return _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding=padding, activation=activation,
                    is_incremental=False,
                    is_training=is_training, scope=scope,
-                   input_buffer=None, dropout=dropout, std_mul=std_mul, kernel_initializer=kernel_initializer,
-                   bias_initializer=bias_initializer)
+                   input_buffer=None, dropout=dropout, kernel_initializer=kernel_initializer,
+                   bias_initializer=bias_initializer, normalize_weight=normalize_weight)
 
 
 def conv1d_incremental(inputs, in_channels, out_channels, kernel_size, dilation, activation, scope="_conv1d",
                        input_buffer=None,
                        dropout=1,
-                       std_mul=4.0, kernel_initializer=None, bias_initializer=None):
+                       std_mul=4.0, kernel_initializer=None, bias_initializer=None, normalize_weight=False):
     return _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding=0, activation=activation,
                    is_incremental=True, is_training=False, scope=scope,
-                   input_buffer=input_buffer, dropout=dropout, std_mul=std_mul, kernel_initializer=kernel_initializer,
-                   bias_initializer=bias_initializer)
+                   input_buffer=input_buffer, dropout=dropout, kernel_initializer=kernel_initializer,
+                   bias_initializer=bias_initializer, normalize_weight=normalize_weight)
 
 
 class Conv1dGLU(tf.layers.Layer):
@@ -87,7 +87,7 @@ class Conv1dGLU(tf.layers.Layer):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 dropout, dilation=1, residual=False,
+                 dropout, dilation=1, residual=False, kernel_initializer_seed=None,
                  is_incremental=False, trainable=True, name=None):
         assert in_channels % 2 == 0
         super(Conv1dGLU, self).__init__(name=name, trainable=trainable)
@@ -98,6 +98,13 @@ class Conv1dGLU(tf.layers.Layer):
         self.residual = residual
         self.dilation = dilation
         self.is_incremental = is_incremental
+        std_factor = 4.0
+        self.kernel_stddev = math.sqrt((std_factor * dropout) / (float(kernel_size) * in_channels))
+
+        self.kernel_initializer = tf.truncated_normal_initializer(mean=0.,
+                                                                  stddev=self.kernel_stddev,
+                                                                  seed=kernel_initializer_seed)
+        self.bias_initializer = tf.zeros_initializer()
 
     def build(self, input_shape):
         in_channels_tensor = input_shape[2]
@@ -115,10 +122,16 @@ class Conv1dGLU(tf.layers.Layer):
             x, next_input_buffer = conv1d_incremental(x, self.in_channels, 2 * self.out_channels, self.kernel_size,
                                                       dilation=self.dilation, activation=None,
                                                       input_buffer=input_buffer,
-                                                      dropout=self.dropout)
+                                                      dropout=self.dropout,
+                                                      kernel_initializer=self.kernel_initializer,
+                                                      bias_initializer=self.bias_initializer,
+                                                      normalize_weight=True)
         else:
             x = conv1d(x, self.in_channels, 2 * self.out_channels, self.kernel_size, self.dilation, activation=None,
-                       is_training=training, dropout=self.dropout)
+                       is_training=training, dropout=self.dropout,
+                       kernel_initializer=self.kernel_initializer,
+                       bias_initializer=self.bias_initializer,
+                       normalize_weight=True)
 
         a, b = tf.split(x, num_or_size_splits=2, axis=splitdim)
         # apply GLU
