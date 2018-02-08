@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np
-import uuid
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
