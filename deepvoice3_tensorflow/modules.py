@@ -4,6 +4,40 @@ from .weight_normalization import weight_normalization
 import math
 
 
+def linear(inputs, in_features, out_features, dropout=1, weight_initializer_seed=None):
+    module = Linear(in_features, out_features, dropout, weight_initializer_seed)
+    return module.apply(inputs)
+
+
+class Linear(tf.layers.Layer):
+    """Weight-normalized Linear layer (input: B x T x C)"""
+
+    def __init__(self, in_features, out_features, dropout=1, weight_initializer_seed=None, trainable=True,
+                 name=None, **kwargs):
+        super(Linear, self).__init__(name=name, trainable=trainable, **kwargs)
+        self.in_features = in_features
+        self.out_features = out_features
+        stddev = math.sqrt(dropout / in_features)
+        self.weight_initializer = tf.truncated_normal_initializer(mean=0,
+                                                                  stddev=stddev, seed=weight_initializer_seed)
+
+    def build(self, input_shape):
+        if not self.built:
+            # no dependency on input_shape
+            weight = self.add_variable("weight", shape=(self.in_features, self.out_features),
+                                       initializer=self.weight_initializer,
+                                       trainable=False)
+            self.normalized_weight = weight_normalization(weight)
+            self.bias = self.add_variable("bias", shape=(self.out_features), initializer=tf.zeros_initializer())
+            self.built = True
+
+    def call(self, inputs, training=False):
+        if inputs.shape.ndims == 2:
+            return tf.matmul(inputs, self.normalized_weight) + self.bias
+        else:
+            return tf.einsum("btc,ce->bte", inputs, self.normalized_weight)
+
+
 def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embedding'):
     '''
 
