@@ -1,6 +1,7 @@
 import tensorflow as tf
 from .ops import causal_conv, Conv1dIncremental
 from .weight_normalization import weight_normalization
+from .cnn_cell import CNNCell
 import math
 
 
@@ -116,7 +117,7 @@ def conv1d_incremental(inputs, in_channels, out_channels, kernel_size, dilation,
                    bias_initializer=bias_initializer, normalize_weight=normalize_weight)
 
 
-class Conv1dGLU(tf.layers.Layer):
+class Conv1dGLU(CNNCell):
     """(Dilated) Conv1d + Gated linear unit + (optionally) speaker embedding
     """
 
@@ -131,7 +132,7 @@ class Conv1dGLU(tf.layers.Layer):
         self.dropout = dropout
         self.residual = residual
         self.dilation = dilation
-        self.is_incremental = is_incremental
+        self._is_incremental = is_incremental
         std_factor = 4.0
         self.kernel_stddev = math.sqrt((std_factor * dropout) / (float(kernel_size) * in_channels))
 
@@ -177,6 +178,25 @@ class Conv1dGLU(tf.layers.Layer):
             return output, next_input_buffer
         else:
             return output
+
+    @property
+    def state_size(self):
+        kernel_size = self.kernel_size
+        buffer_size = kernel_size + (kernel_size - 1) * (self.dilation - 1)
+        return tf.TensorShape([None, buffer_size, self.in_channels])
+
+    @property
+    def output_size(self):
+        return self.out_channels
+
+    @property
+    def is_incremental(self):
+        return self._is_incremental
+
+    def zero_state(self, batch_size, dtype):
+        shape = self.state_size
+        shape = shape.merge_with(tf.TensorShape([batch_size, None, None])) if not shape.is_fully_defined() else shape
+        return tf.zeros(shape=shape, dtype=dtype)
 
 
 def conv1dGLU(input, in_channels, out_channels, kernel_size,
