@@ -109,7 +109,7 @@ def conv1d(inputs, in_channels, out_channels, kernel_size, dilation, activation,
 def conv1d_incremental(inputs, in_channels, out_channels, kernel_size, dilation, activation, scope="_conv1d",
                        input_buffer=None,
                        dropout=1,
-                       std_mul=4.0, kernel_initializer=None, bias_initializer=None, normalize_weight=False):
+                       kernel_initializer=None, bias_initializer=None, normalize_weight=False):
     return _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding=0, activation=activation,
                    is_incremental=True, is_training=False, scope=scope,
                    input_buffer=input_buffer, dropout=dropout, kernel_initializer=kernel_initializer,
@@ -147,6 +147,7 @@ class Conv1dGLU(tf.layers.Layer):
         ]):
             super(Conv1dGLU, self).build(input_shape)
 
+    # ToDo: remove training parameter from call
     def call(self, inputs, input_buffer=None, training=False):
         residual = inputs
         x = tf.nn.dropout(inputs, self.dropout)

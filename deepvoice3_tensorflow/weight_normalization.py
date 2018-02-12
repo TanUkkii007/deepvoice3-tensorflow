@@ -2,10 +2,10 @@ import tensorflow as tf
 
 
 class WeightNormalization(tf.layers.Layer):
-    def __init__(self, weight_value, dimension, trainable=True, name=None, **kwargs):
+    def __init__(self, weight, dimension, trainable=True, name=None, **kwargs):
         super(WeightNormalization, self).__init__(
             trainable=trainable, name=name, **kwargs)
-        self.weight_value = weight_value
+        self.weight_value = weight.initialized_value()
         self.dimension = dimension
         self.ndims = self.weight_value.shape.ndims
         self.reduction_axis = self._compute_reduction_axis()
@@ -16,7 +16,7 @@ class WeightNormalization(tf.layers.Layer):
         self.v = tf.Variable(self.weight_value, name="v")
         self.built = True
 
-    def call(self, weight, training=False):
+    def call(self, _, training=False):
         return self.compute_weight()
 
     def initial_g(self):
@@ -36,5 +36,5 @@ class WeightNormalization(tf.layers.Layer):
         return r[0] if len(r) == 1 else r
 
 def weight_normalization(weight, dimension=0):
-    wn = WeightNormalization(weight.initialized_value(), dimension)
+    wn = WeightNormalization(weight, dimension)
     return wn.apply(weight)

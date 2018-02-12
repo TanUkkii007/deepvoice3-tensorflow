@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import uuid
 from hypothesis import given, assume, settings, unlimited
 from hypothesis.strategies import integers
 from hypothesis.extra.numpy import arrays
@@ -15,7 +16,7 @@ class WeightNormalizationTest(tf.test.TestCase):
         assume(not np.all(_weight == 0.0))
         input_pf = tf.placeholder(dtype=tf.float32, shape=[5, 1])
         weight = tf.Variable(_weight, trainable=False)
-        wn = WeightNormalization(weight.initialized_value(), dimension=0)
+        wn = WeightNormalization(weight, dimension=0)
         normalized_weight = wn.apply(weight)
         output = tf.reduce_sum(tf.matmul(normalized_weight, input_pf), axis=0)
         output_original = tf.reduce_sum(tf.matmul(weight, input_pf), axis=0)
@@ -48,8 +49,8 @@ class WeightNormalizationTest(tf.test.TestCase):
     def test_weight_normalization_3(self, _weight, input):
         assume(not np.all(_weight == 0.0))
         input_pf = tf.placeholder(dtype=tf.float32, shape=[3, 5, 1])
-        weight = tf.Variable(_weight, trainable=False)
-        wn = WeightNormalization(weight.initialized_value(), dimension=0)
+        weight = tf.get_variable(str(uuid.uuid4()), shape=[3, 4, 5], initializer=tf.constant_initializer(_weight))
+        wn = WeightNormalization(weight, dimension=0)
         normalized_weight = wn.apply(weight)
         output = tf.reduce_sum(tf.matmul(normalized_weight, input_pf), axis=0)
         output_original = tf.reduce_sum(tf.matmul(weight, input_pf), axis=0)
