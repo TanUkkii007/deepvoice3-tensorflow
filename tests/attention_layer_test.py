@@ -30,8 +30,8 @@ class AttentionLayerTest(tf.test.TestCase):
         query = tf.constant(query)
         encoder_out = tf.constant(encoder_out)
 
-        attention = AttentionLayer(C, embed_dim, dropout)
-        output = attention.apply(query, encoder_out=[encoder_out, encoder_out], mask=None)
+        attention = AttentionLayer(C, embed_dim, encoder_out, dropout)
+        output = attention.apply(query)
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
