@@ -1,17 +1,65 @@
 import numpy as np
-
+import tensorflow as tf
 
 class PositionalEncoding(object):
-
-    def __init__(self, n_position, dimension, position_rate=1.0):
+    def __init__(self, value, n_positions, dimension):
         assert dimension % 2 == 0
-        self.n_position = n_position
-        self.dimension = dimension
-        self.position_rate = position_rate
-        self.argument_table = self.initial_arguments()
-        self.sinusoidal_encoding = self.encode_sinusoid(self.argument_table, copy=True)
+        assert value.shape.ndims == 2
+        assert value.shape[0].value == n_positions
+        assert value.shape[1].value == dimension
+        self._dimension = dimension
+        self._n_positions = n_positions
+        self._value = value
 
-    def position_shift_factor(self, shift):
+    @property
+    def dimension(self):
+        return self._dimension
+
+    @property
+    def n_positions(self):
+        return self._n_positions
+
+    def sinusoidal_encode(self, position_rate=1.0):
+        odd = self._value[:, 0::2]
+        even = self._value[:, 1::2]
+        return SinusoidalEncoding.encode(odd, even, self, position_rate)
+
+    @staticmethod
+    def initial_value(n_position, dimension, position_rate=1.0):
+        def value_at(position, index):
+            return position_rate * position / np.power(10000, 2 * (index // 2) / dimension)
+
+        values = [[
+            value_at(pos, i) for i in
+            range(dimension)
+        ] for pos in range(n_position)]
+        return PositionalEncoding(tf.constant(np.array(values)), n_position, dimension)
+
+
+class SinusoidalEncoding(object):
+    def __init__(self, odd, even, positional_encoding):
+        self.odd = odd
+        self.even = even
+        self._pe = positional_encoding
+
+    @staticmethod
+    def encode(odd, even, positional_encoding, position_rate=1.0):
+        odd = position_rate * odd
+        even = position_rate * even
+        odd = tf.concat([tf.expand_dims(odd[0, :], axis=0), tf.sin(odd[1:, :])], axis=0)
+        even = tf.concat([tf.expand_dims(even[0, :], axis=0), tf.cos(even[1:, :])], axis=0)
+        return SinusoidalEncoding(odd, even, positional_encoding)
+
+    @property
+    def value(self):
+        dimension = self._pe.dimension
+        odd_idx = [[d] for d in range(0, dimension, 2)]
+        even_idx = [[d] for d in range(1, dimension, 2)]
+        shape = [self._pe.dimension, self._pe.n_positions] # transposed
+        updates = tf.transpose(tf.concat([self.odd, self.even], axis=-1), perm=(1,0))
+        return tf.transpose(tf.scatter_nd(indices=odd_idx + even_idx, updates=updates, shape=shape), perm=(1,0))
+
+    def shift_factor(self, shift):
         ''' return shift factor matrix for sinusoidal encoding table
         :math:`\begin{pmatrix}
         \cos(k/a) & \sin(k/a)\\
@@ -36,57 +84,21 @@ class PositionalEncoding(object):
         '''
 
         def dimension_constant(i):
-            return np.power(10000, 2 * (i // 2) / self.dimension)
+            return np.power(10000, 2 * (i // 2) / self._pe.dimension)
 
         shifts = list(
-            [shift / dimension_constant(i) for i in range(self.dimension)])
+            [shift / dimension_constant(i) for i in range(self._pe.dimension)])
         shifts[0::2] = [[np.cos(s), np.sin(s)] for s in shifts[0::2]]
         shifts[1::2] = [[-np.sin(s), np.cos(s)] for s in shifts[1::2]]
         return np.array(shifts)
 
-    def _shift_position_internal(self, shift):
-        odd = self.sinusoidal_encoding[:, 0::2]  # (n_position, dimension//2)
-        even = self.sinusoidal_encoding[:, 1::2]  # (n_position, dimension//2)
-        odd_even = np.stack([odd, even]).transpose((2, 0, 1))  # (dimension//2, 2, n_position)
-        factor = self.position_shift_factor(shift)
+    def shift_n(self, shift):
+        odd_even = tf.transpose(tf.stack([self.odd, self.even]), perm=(2, 0, 1))  # (dimension//2, 2, n_position)
+        factor = self.shift_factor(shift)
         odd_factor = factor[0::2]
         even_factor = factor[1::2]
         odd_even_factor = np.stack([odd_factor, even_factor]).transpose((1, 0, 2))  # (dimension//2, 2, 2)
-        shifted = odd_even_factor @ odd_even  # (dimension//2, 2, n_position)
-        shifted = shifted.reshape(self.dimension,
-                                  self.n_position)  # (dimension, n_position)
-        return shifted.transpose()
-
-    def initial_arguments(self):
-        ''' Create an argument table of sinusoid function for positional encoding.
-        :math:`{PE}_{\mathrm{pos}, 2i} = \sin({pos}/10000^{2i/d_{model}})`
-
-        :param n_position:
-        :param dimension:
-        :param position_rate:
-        :return: ndarray of (n_position, dimension)
-        '''
-
-        def argument(position, index):
-            return self.position_rate * position / np.power(10000, 2 * (index // 2) / self.dimension)
-
-        arguments = [[
-            argument(pos, i) for i in
-            range(self.dimension)
-        ] for pos in range(self.n_position)]
-        return np.array(arguments)
-
-    @staticmethod
-    def encode_sinusoid(argument_table, copy=True):
-        ''' map arguments with sinusoidal function
-        :math:`{PE}_{\mathrm{pos}, 2i} = \sin({pos}/10000^{2i/d_{model}})`
-        :math:`{PE}_{\mathrm{pos}, 2i+1} = \cos({pos}/10000^{2i+1/d_{model}})`
-
-        :param argument_table: numpy array with dimension `(n_position, dimension)`
-        :param copy:
-        :return:
-        '''
-        argument_table = argument_table.copy() if copy else argument_table
-        argument_table[1:, 0::2] = np.sin(argument_table[1:, 0::2])
-        argument_table[1:, 1::2] = np.cos(argument_table[1:, 1::2])
-        return argument_table
+        shifted = tf.matmul(tf.constant(odd_even_factor), odd_even)  # (dimension//2, 2, n_position)
+        new_odd = tf.transpose(shifted[:, 0, :], perm=(1,0))
+        new_even = tf.transpose(shifted[:, 1, :], perm=(1,0))
+        return SinusoidalEncoding(new_odd, new_even, self._pe)
