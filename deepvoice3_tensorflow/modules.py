@@ -2,6 +2,7 @@ import tensorflow as tf
 from .ops import causal_conv, Conv1dIncremental
 from .weight_normalization import weight_normalization
 from .cnn_cell import CNNCell
+from .positional_concoding import PositionalEncoding
 import math
 
 
@@ -39,6 +40,24 @@ class Linear(tf.layers.Layer):
             return tf.einsum("btc,ce->bte", inputs, self.normalized_weight)
 
 
+class SinusoidalEncodingEmbedding(tf.layers.Layer):
+    def __init__(self, num_embeddings, embedding_dim, trainable=True, name=None, **kwargs):
+        super(SinusoidalEncodingEmbedding, self).__init__(name=name, trainable=trainable, **kwargs)
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+
+    def build(self, input_shape):
+        initial_pe = PositionalEncoding.initial_value(self.num_embeddings, self.embedding_dim, position_rate=1.0)
+        self.weight = self.add_variable("weight", shape=initial_pe.shape, dtype=tf.float32,
+                                        initializer=tf.constant_initializer(initial_pe.value,
+                                                                            verify_shape=True))
+        self.built = True
+
+    def call(self, x, w=1.0):
+        encoded = PositionalEncoding(self.weight, self.num_embeddings, self.embedding_dim).sinusoidal_encode(w)
+        return tf.nn.embedding_lookup(encoded, x)
+
+
 def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embedding'):
     '''
 
@@ -54,7 +73,7 @@ def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embeddin
                                       , initializer=tf.truncated_normal_initializer(stddev=stddev))
     return tf.nn.embedding_lookup(embedding_table, inputs)
 
-
+# ToDo: implement as tf.layers.Layer
 def _conv1d(inputs, in_channels, out_channels, kernel_size, dilation, padding, activation, is_incremental, is_training,
             scope,
             input_buffer=None, dropout=1, kernel_initializer=None, bias_initializer=None,
