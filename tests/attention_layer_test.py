@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers, floats, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import AttentionLayer
+from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer
 
 
 @composite
@@ -30,8 +30,10 @@ class AttentionLayerTest(tf.test.TestCase):
         query = tf.constant(query)
         encoder_out = tf.constant(encoder_out)
 
-        attention = AttentionLayer(C, embed_dim, dropout)
-        output = attention.apply((query, encoder_out, encoder_out))
+        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim)
+
+        attention = AttentionLayer(attention_mechanism, C, dropout)
+        output = attention.apply(query)
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())

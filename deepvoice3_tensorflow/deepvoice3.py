@@ -3,54 +3,44 @@ import math
 from collections import namedtuple
 from .modules import Linear, Conv1dGLU
 from .cnn_cell import CNNCell, MultiCNNCell
+from tensorflow.contrib.seq2seq.python.ops.attention_wrapper import AttentionMechanism
 
-AttentionInput = namedtuple("AttentionInput", ["query", "keys", "values"])
 
+class ScaledDotProductAttentionMechanism(AttentionMechanism):
+    def __init__(self, memory, embed_dim, window_ahead=3, window_backward=1, dropout=1.0, use_key_projection=True, use_value_projection=True):
+        if use_key_projection:
+            key_projection = Linear(embed_dim, embed_dim, dropout=dropout, name="key_projection")
+            self._keys = key_projection(memory)
+        else:
+            self._keys = memory
+        if use_value_projection:
+            value_projection = Linear(embed_dim, embed_dim, dropout=dropout, name="value_projection")
+            self._values = value_projection(memory)
+        else:
+            self._values = memory
 
-class AttentionLayer(tf.layers.Layer):
-    def __init__(self, conv_channels, embed_dim, dropout=1, use_key_projection=True, use_value_projection=True,
-                 window_ahead=3, window_backward=1, trainable=True,
-                 name=None, **kwargs):
-        super(AttentionLayer, self).__init__(name=name, trainable=trainable, **kwargs)
-        self.conv_channels = conv_channels
-        self.embed_dim = embed_dim
-        self.dropout = dropout
-
-        self.use_key_projection = use_key_projection
-        self.use_value_projection = use_value_projection
-
-        self.key_projection = None
-        self.value_projection = None
         self.window_ahead = window_ahead
         self.window_backward = window_backward
+        self.dropout = dropout
 
-    def build(self, input_shape):
-        conv_channels = self.conv_channels
-        embed_dim = self.embed_dim
-        with tf.variable_scope("query_projection"):
-            self.query_projection = Linear(conv_channels, embed_dim, dropout=self.dropout)
-        if self.use_key_projection:
-            with tf.variable_scope("key_projection"):
-                self.key_projection = Linear(embed_dim, embed_dim, dropout=self.dropout)
-        if self.use_value_projection:
-            with tf.variable_scope("value_projection"):
-                self.value_projection = Linear(embed_dim, embed_dim, dropout=self.dropout)
+        self._embed_dim = embed_dim
 
-        with tf.variable_scope("out_projection"):
-            self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout)
+    @property
+    def values(self):
+        return self._values
 
-    def call(self, inputs, mask=None, last_attended=None):
-        query, keys, values = inputs
-        residual = query
-        if self.use_value_projection:
-            values = self.value_projection.apply(values)
-        if self.use_key_projection:
-            keys = self.key_projection.apply(keys)
+    @property
+    def keys(self):
+        return self._keys
 
-        # attention
-        x = self.query_projection(query)
+    @property
+    def embed_dim(self):
+        return self._embed_dim
+
+    # ToDo: use previous_alignments to calculate mask
+    def __call__(self, query, previous_alignments=None, mask=None, last_attended=None):
         # Q K^\top
-        x = tf.matmul(x, keys, transpose_b=True)
+        x = tf.matmul(query, self.keys, transpose_b=True)
 
         x = self._mask(x, mask, last_attended)
 
@@ -63,15 +53,11 @@ class AttentionLayer(tf.layers.Layer):
 
         x = tf.nn.dropout(x, self.dropout)
 
-        x = tf.matmul(x, values)
+        x = tf.matmul(x, self.values)
 
         # scale attention output
-        s = tf.cast(tf.shape(values)[1], dtype=tf.float32)
+        s = tf.cast(tf.shape(self.values)[1], dtype=tf.float32)
         x = x * (s * tf.sqrt(1.0 / s))
-
-        # project back
-        x = self.out_projection(x)
-        x = (x + residual) * math.sqrt(0.5)
         return x, alignment_scores
 
     def _mask(self, target, mask, last_attended):
@@ -89,6 +75,34 @@ class AttentionLayer(tf.layers.Layer):
             target[:, :, ahead:] = mask
 
         return target
+
+
+class AttentionLayer(tf.layers.Layer):
+    def __init__(self, attention_mechanism, conv_channels, dropout=1.0, trainable=True,
+                 name=None, **kwargs):
+        super(AttentionLayer, self).__init__(name=name, trainable=trainable, **kwargs)
+        self.attention_mechanism = attention_mechanism
+        self.conv_channels = conv_channels
+        self.dropout = dropout
+
+    def build(self, input_shape):
+        conv_channels = self.conv_channels
+        embed_dim = self.attention_mechanism.embed_dim
+        self.query_projection = Linear(conv_channels, embed_dim, dropout=self.dropout, name="query_projection")
+        self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout, name="out_projection")
+
+    def call(self, query, mask=None, last_attended=None):
+        residual = query
+
+        # attention
+        x = self.query_projection(query)
+
+        x, alignment_scores = self.attention_mechanism(x)
+
+        # project back
+        x = self.out_projection(x)
+        x = (x + residual) * math.sqrt(0.5)
+        return x, alignment_scores
 
 
 CNNAttentionWrapperState = namedtuple("CNNAttentionWrapperState",
@@ -117,10 +131,10 @@ class CNNAttentionWrapper(CNNCell):
 
     @property
     def state_size(self):
-        alignment_size = self.attention.keys.shape[1].value
+        alignment_size = None
         return (
-        self.convolution.state_size, tf.TensorShape([]), tf.TensorShape([alignment_size, self.attention.embed_dim]),
-        None, None, None)
+            self.convolution.state_size, tf.TensorShape([]), tf.TensorShape([alignment_size, self.attention.embed_dim]),
+            None, None, None)
 
     @property
     def output_size(self):
@@ -139,13 +153,17 @@ class CNNAttentionWrapper(CNNCell):
         self.built = True
 
     def call(self, inputs, state):
+        query, keys, values = inputs
+        residual = query
         if self.is_incremental:
-            query, next_cell_state = self.convolution(inputs, state.cell_state)
+            query, next_cell_state = self.convolution(query, state.cell_state)
         else:
-            query = self.convolution(inputs)
+            query = self.convolution(query)
 
-        output, attention_scores = self.attention(query, mask=state.mask, last_attended=state.last_attended)
+        output, attention_scores = self.attention(AttentionInput(query, keys, values), mask=state.mask,
+                                                  last_attended=state.last_attended)
         alignment_history = state.alignment_history.write(state.time, attention_scores)
+        output = (output + residual) * math.sqrt(0.5)
         # ToDo: properly set mask and last_attended
         return output, CNNAttentionWrapperState(next_cell_state, state.time + 1, attention_scores, alignment_history,
                                                 mask=None, last_attended=None)
