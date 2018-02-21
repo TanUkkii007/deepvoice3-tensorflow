@@ -4,18 +4,17 @@ from collections import namedtuple
 from .modules import Linear, Conv1dGLU
 from .cnn_cell import CNNCell, MultiCNNCell
 
+AttentionInput = namedtuple("AttentionInput", ["query", "keys", "values"])
+
 
 class AttentionLayer(tf.layers.Layer):
-    def __init__(self, conv_channels, embed_dim, memory, dropout=1, use_key_projection=True, use_value_projection=True,
+    def __init__(self, conv_channels, embed_dim, dropout=1, use_key_projection=True, use_value_projection=True,
                  window_ahead=3, window_backward=1, trainable=True,
-                 name=None):
-        super(AttentionLayer, self).__init__(name=name, trainable=trainable)
+                 name=None, **kwargs):
+        super(AttentionLayer, self).__init__(name=name, trainable=trainable, **kwargs)
         self.conv_channels = conv_channels
         self.embed_dim = embed_dim
         self.dropout = dropout
-
-        self.keys = memory
-        self.values = memory
 
         self.use_key_projection = use_key_projection
         self.use_value_projection = use_value_projection
@@ -40,8 +39,8 @@ class AttentionLayer(tf.layers.Layer):
         with tf.variable_scope("out_projection"):
             self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout)
 
-    def call(self, query, mask=None, last_attended=None):
-        keys, values = self.keys, self.values
+    def call(self, inputs, mask=None, last_attended=None):
+        query, keys, values = inputs
         residual = query
         if self.use_value_projection:
             values = self.value_projection.apply(values)
@@ -100,7 +99,9 @@ CNNAttentionWrapperState = namedtuple("CNNAttentionWrapperState",
 class CNNAttentionWrapper(CNNCell):
     def __init__(self, embed_dim, use_key_projection, use_value_projection,
                  window_ahead, window_backward, in_channels, out_channels, kernel_size, dilation, dropout,
-                 is_incremental):
+                 is_incremental, trainable=True,
+                 name=None, **kwargs):
+        super(CNNAttentionWrapper, self).__init__(name=name, trainable=trainable, **kwargs)
         self.convolution = Conv1dGLU(in_channels, out_channels, kernel_size,
                                      dropout=dropout, dilation=dilation, residual=False,
                                      is_incremental=is_incremental)
