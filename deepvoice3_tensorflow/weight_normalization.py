@@ -12,8 +12,8 @@ class WeightNormalization(tf.layers.Layer):
 
     def build(self, weight_shape):
         # add g and v as new parameters and express w as g/||v|| * v
-        self.g = tf.Variable(self.initial_g(), name="g")
-        self.v = tf.Variable(self.weight_value, name="v")
+        self.g = self.add_variable(name="g", shape=None, dtype=tf.float32, initializer=self.initial_g())
+        self.v = self.add_variable(name="v", shape=None, dtype=tf.float32, initializer=self.weight_value)
         self.built = True
 
     def call(self, _, training=False):
