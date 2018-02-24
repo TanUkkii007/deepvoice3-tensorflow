@@ -12,8 +12,13 @@ class WeightNormalization(tf.layers.Layer):
 
     def build(self, weight_shape):
         # add g and v as new parameters and express w as g/||v|| * v
-        self.g = self.add_variable(name="g", shape=None, dtype=tf.float32, initializer=self.initial_g())
-        self.v = self.add_variable(name="v", shape=None, dtype=tf.float32, initializer=self.weight_value)
+        g_shape = [weight_shape[i].value for i in self._compute_reduction_axis()]
+        self.g = self.add_variable(name="g", shape=g_shape, dtype=tf.float32,
+                                   initializer=lambda shape, dtype=None, partition_info=None,
+                                                      verify_shape=None: self.initial_g())
+        self.v = self.add_variable(name="v", shape=weight_shape, dtype=tf.float32,
+                                   initializer=lambda shape, dtype=None, partition_info=None,
+                                                      verify_shape=None: self.weight_value)
         self.built = True
 
     def call(self, _, training=False):
@@ -34,6 +39,7 @@ class WeightNormalization(tf.layers.Layer):
     def _compute_reduction_axis(self):
         r = [i for i in range(0, self.ndims) if i != self.dimension]
         return r[0] if len(r) == 1 else r
+
 
 def weight_normalization(weight, dimension=0):
     wn = WeightNormalization(weight, dimension)
