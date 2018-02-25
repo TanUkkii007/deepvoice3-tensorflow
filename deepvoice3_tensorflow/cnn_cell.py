@@ -27,6 +27,10 @@ class CNNCell(tf.layers.Layer):
     def zero_state(self, batch_size, dtype):
         raise NotImplementedError("Abstract method")
 
+    @property
+    def require_state(self):
+        return self.is_incremental
+
 
 class MultiCNNCell(CNNCell):
     def __init__(self, cells, is_incremental):
@@ -50,16 +54,21 @@ class MultiCNNCell(CNNCell):
     def zero_state(self, batch_size, dtype):
         return [cell.zero_state(batch_size, dtype) for cell in self._cells]
 
+    @property
+    def require_state(self):
+        return any([c.require_state for c in self._cells])
+
     def call(self, inputs, state=None):
         new_states = []
         current_input = inputs
         for i, cell in enumerate(self._cells):
             with tf.variable_scope("cell_%d" % i):
-                if self.is_incremental:
+                if cell.require_state:
                     current_state = state[i]
                     current_input, new_state = cell(current_input, current_state)
                     new_states.append(new_state)
                 else:
                     current_input = cell.apply(current_input)
-        return current_input if not self.is_incremental else (current_input, new_states)
+                    new_states.append(None)
+        return current_input if not self.require_state else (current_input, new_states)
 

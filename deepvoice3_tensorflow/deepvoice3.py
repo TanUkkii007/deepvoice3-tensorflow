@@ -174,6 +174,10 @@ class CNNAttentionWrapper(CNNCell):
     def output_size(self):
         return self._output_size
 
+    @property
+    def require_state(self):
+        return True
+
     def zero_state(self, batch_size, dtype):
         return CNNAttentionWrapperState(cell_state=self.convolution.zero_state(batch_size, dtype),
                                         time=tf.zeros(shape=[], dtype=tf.int32),
@@ -185,9 +189,7 @@ class CNNAttentionWrapper(CNNCell):
         self.built = True
 
     def call(self, query, state=None):
-        # ToDo: remove
-        if state is None:
-            state = self.zero_state(query.shape[0].value, query.dtype)
+        assert state is not None
 
         residual = query
         if self.is_incremental:
@@ -204,5 +206,57 @@ class CNNAttentionWrapper(CNNCell):
             return output, CNNAttentionWrapperState(next_cell_state, state.time + 1, attention_scores,
                                                     alignment_history)
         else:
-            return output
+            return output, CNNAttentionWrapperState(state.cell_state, state.time, attention_scores,
+                                                    alignment_history)
+
+
+MultiHopAttentionArgs = namedtuple("MultiHopAttentionArgs", ["out_channels", "kernel_size", "dilation", "dropout", "r", "kernel_initializer_seed",
+                                        "weight_initializer_seed"])
+
+
+class MultiHopAttention(CNNCell):
+    def __init__(self, attention_mechanism, in_channels, convolutions, is_incremental, trainable=True,
+                 name=None, **kwargs):
+        super(MultiHopAttention, self).__init__(name=name, trainable=trainable, **kwargs)
+        cells = []
+        next_in_channels = in_channels
+        for i, (out_channels, kernel_size, dilation, dropout, r, kernel_initializer_seed,
+                                        weight_initializer_seed) in enumerate(convolutions):
+            aw = CNNAttentionWrapper(attention_mechanism, next_in_channels, out_channels, kernel_size,
+                                     dilation, dropout, is_incremental, r, kernel_initializer_seed,
+                                        weight_initializer_seed)
+            next_in_channels = aw.output_size
+            cells.append(aw)
+        self.layer = MultiCNNCell(cells, is_incremental)
+        self._is_incremental = is_incremental
+
+    @property
+    def is_incremental(self):
+        return self._is_incremental
+
+    @property
+    def state_size(self):
+        return self.layer.state_size
+
+    @property
+    def output_size(self):
+        return self.layer.output_size
+
+    def zero_state(self, batch_size, dtype):
+        return self.layer.zero_state(batch_size, dtype)
+
+    @property
+    def require_state(self):
+        return True
+
+    def build(self, input_shape):
+        self.built = True
+
+    def call(self, inputs, state):
+        return self.layer(inputs, state)
+
+    @staticmethod
+    def average_alignment(states):
+        return sum([state.alignments for state in states]) / len(states)
+
 
