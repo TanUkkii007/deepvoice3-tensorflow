@@ -42,7 +42,7 @@ class AttentionLayerTest(tf.test.TestCase):
 
     @given(tensors=attention_tensors(), kernel_size=integers(2, 10),
            dilation=integers(1, 20), r=integers(1, 1))
-    @settings(max_examples=3, timeout=unlimited)
+    @settings(max_examples=10, timeout=unlimited)
     def test_cnn_attention_wrapper(self, tensors, kernel_size, dilation, r):
         B, T_query, C, T_encoder, embed_dim, query, encoder_out = tensors
         assume(C % 2 == 0)
@@ -55,7 +55,8 @@ class AttentionLayerTest(tf.test.TestCase):
 
         attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim)
         attention = CNNAttentionWrapper(attention_mechanism, C, out_channels, kernel_size, dilation, dropout,
-                                        is_incremental=False, r=r, kernel_initializer_seed=123)
+                                        is_incremental=False, r=r, kernel_initializer_seed=123,
+                                        weight_initializer_seed=456)
         output = attention.apply(query)
 
         with self.test_session() as sess:
@@ -65,14 +66,15 @@ class AttentionLayerTest(tf.test.TestCase):
 
         attention_incremental = CNNAttentionWrapper(attention_mechanism, C, out_channels, kernel_size, dilation,
                                                     dropout,
-                                                    is_incremental=True, r=r, kernel_initializer_seed=123)
+                                                    is_incremental=True, r=r, kernel_initializer_seed=123,
+                                                    weight_initializer_seed=456)
 
         def condition(time, unused_inputs, unused_state, unused_outputs):
             return tf.less(time, T_query)
 
         def body(time, inputs, state, outputs):
             # ToDo: slice time:time+reduction_factor
-            btc_one = tf.reshape(inputs[:, time:time+r, :], shape=(B, -1, C))
+            btc_one = tf.reshape(inputs[:, time:time + r, :], shape=(B, -1, C))
             out_online, next_states = attention_incremental.apply(btc_one, state)
             return (time + r, inputs, next_states, outputs.write(time, out_online))
 
@@ -90,7 +92,9 @@ class AttentionLayerTest(tf.test.TestCase):
             output_online, alignments = sess.run([output_online, final_state.alignments])
 
         print(output_online)
-        print(alignments)
+        print("---------------")
+        self.assertAllClose(output, output_online, rtol=1e-5, atol=1e-5)
+
 
 if __name__ == '__main__':
     tf.test.main()

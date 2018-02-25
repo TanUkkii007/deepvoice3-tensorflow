@@ -105,18 +105,21 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
 
 
 class AttentionLayer(tf.layers.Layer):
-    def __init__(self, attention_mechanism, conv_channels, dropout=1.0, trainable=True,
+    def __init__(self, attention_mechanism, conv_channels, dropout=1.0, weight_initializer_seed=None, trainable=True,
                  name=None, **kwargs):
         super(AttentionLayer, self).__init__(name=name, trainable=trainable, **kwargs)
         self.attention_mechanism = attention_mechanism
         self.conv_channels = conv_channels
         self.dropout = dropout
+        self.weight_initializer_seed = weight_initializer_seed
 
     def build(self, input_shape):
         conv_channels = self.conv_channels
         embed_dim = self.attention_mechanism.embed_dim
-        self.query_projection = Linear(conv_channels, embed_dim, dropout=self.dropout, name="query_projection")
-        self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout, name="out_projection")
+        self.query_projection = Linear(conv_channels, embed_dim, dropout=self.dropout,
+                                       weight_initializer_seed=self.weight_initializer_seed, name="query_projection")
+        self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout,
+                                     weight_initializer_seed=self.weight_initializer_seed, name="out_projection")
 
     def call(self, query, mask=None, last_attended=None):
         residual = query
@@ -139,7 +142,7 @@ CNNAttentionWrapperState = namedtuple("CNNAttentionWrapperState",
 
 class CNNAttentionWrapper(CNNCell):
     def __init__(self, attention_mechanism, in_channels, out_channels, kernel_size, dilation, dropout,
-                 is_incremental, r, kernel_initializer_seed=None, trainable=True,
+                 is_incremental, r, kernel_initializer_seed=None, weight_initializer_seed=None, trainable=True,
                  name=None, **kwargs):
         assert in_channels == out_channels
         super(CNNAttentionWrapper, self).__init__(name=name, trainable=trainable, **kwargs)
@@ -148,7 +151,8 @@ class CNNAttentionWrapper(CNNCell):
                                      kernel_initializer_seed=kernel_initializer_seed,
                                      is_incremental=is_incremental)
 
-        self.attention = AttentionLayer(attention_mechanism, out_channels, dropout)
+        self.attention = AttentionLayer(attention_mechanism, out_channels, dropout,
+                                        weight_initializer_seed=weight_initializer_seed)
         self._is_incremental = is_incremental
         self._output_size = out_channels
         self.r = r
