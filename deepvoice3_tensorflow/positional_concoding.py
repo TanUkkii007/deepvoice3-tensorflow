@@ -19,6 +19,14 @@ class PositionalEncoding(object):
     def n_positions(self):
         return self._n_positions
 
+    @property
+    def shape(self):
+        return self._value.shape
+
+    @property
+    def value(self):
+        return self.value
+
     def sinusoidal_encode(self, position_rate=1.0):
         odd = self._value[:, 0::2]
         even = self._value[:, 1::2]

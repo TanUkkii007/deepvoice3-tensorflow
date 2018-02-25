@@ -1,13 +1,23 @@
 import tensorflow as tf
 import math
 from collections import namedtuple
-from .modules import Linear, Conv1dGLU
+from .modules import Linear, Conv1dGLU, SinusoidalEncodingEmbedding
 from .cnn_cell import CNNCell, MultiCNNCell
 from tensorflow.contrib.seq2seq.python.ops.attention_wrapper import AttentionMechanism
 
 
 class ScaledDotProductAttentionMechanism(AttentionMechanism):
-    def __init__(self, memory, embed_dim, window_ahead=3, window_backward=1, dropout=1.0, use_key_projection=True, use_value_projection=True):
+    def __init__(self, memory, embed_dim, window_ahead=3, window_backward=1, dropout=1.0, use_key_projection=True,
+                 use_value_projection=True):
+        '''
+        :param memory: (B, src_len, embed_dim)
+        :param embed_dim:
+        :param window_ahead:
+        :param window_backward:
+        :param dropout:
+        :param use_key_projection:
+        :param use_value_projection:
+        '''
         if use_key_projection:
             key_projection = Linear(embed_dim, embed_dim, dropout=dropout, name="key_projection")
             self._keys = key_projection(memory)
@@ -37,8 +47,25 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
     def embed_dim(self):
         return self._embed_dim
 
+    @property
+    def alignment_size(self):
+        return self.keys.shape[1].value or tf.shape(self.keys)[1]
+
+    def initial_alignment(self, batch_size, target_length, dtype):
+        max_time = self.alignment_size
+        size = tf.stack([batch_size, target_length, max_time], axis=0)
+        return tf.zeros(size, dtype=dtype)
+
     # ToDo: use previous_alignments to calculate mask
     def __call__(self, query, previous_alignments=None, mask=None, last_attended=None):
+        '''
+        :param query: (B, T//r, embed_dim)
+        :param previous_alignments:
+        :param mask:
+        :param last_attended:
+        :return:
+        '''
+
         # Q K^\top
         x = tf.matmul(query, self.keys, transpose_b=True)
 
@@ -95,6 +122,7 @@ class AttentionLayer(tf.layers.Layer):
         residual = query
 
         # attention
+        # (B, T//r, embed_dim)
         x = self.query_projection(query)
 
         x, alignment_scores = self.attention_mechanism(x)
@@ -106,24 +134,24 @@ class AttentionLayer(tf.layers.Layer):
 
 
 CNNAttentionWrapperState = namedtuple("CNNAttentionWrapperState",
-                                      ["cell_state", "time", "alignments", "alignment_history", "mask",
-                                       "last_attended"])
+                                      ["cell_state", "time", "alignments", "alignment_history"])
 
 
 class CNNAttentionWrapper(CNNCell):
-    def __init__(self, embed_dim, use_key_projection, use_value_projection,
-                 window_ahead, window_backward, in_channels, out_channels, kernel_size, dilation, dropout,
-                 is_incremental, trainable=True,
+    def __init__(self, attention_mechanism, in_channels, out_channels, kernel_size, dilation, dropout,
+                 is_incremental, r, kernel_initializer_seed=None, trainable=True,
                  name=None, **kwargs):
+        assert in_channels == out_channels
         super(CNNAttentionWrapper, self).__init__(name=name, trainable=trainable, **kwargs)
         self.convolution = Conv1dGLU(in_channels, out_channels, kernel_size,
                                      dropout=dropout, dilation=dilation, residual=False,
+                                     kernel_initializer_seed=kernel_initializer_seed,
                                      is_incremental=is_incremental)
 
-        self.attention = AttentionLayer(out_channels, embed_dim, dropout, use_key_projection, use_value_projection,
-                                        window_ahead, window_backward)
+        self.attention = AttentionLayer(attention_mechanism, out_channels, dropout)
         self._is_incremental = is_incremental
         self._output_size = out_channels
+        self.r = r
 
     @property
     def is_incremental(self):
@@ -131,40 +159,46 @@ class CNNAttentionWrapper(CNNCell):
 
     @property
     def state_size(self):
-        alignment_size = None
-        return (
-            self.convolution.state_size, tf.TensorShape([]), tf.TensorShape([alignment_size, self.attention.embed_dim]),
-            None, None, None)
+        return CNNAttentionWrapperState(
+            cell_state=self.convolution.state_size,
+            time=tf.TensorShape([]),
+            alignments=self.attention.attention_mechanism.alignment_size,
+            alignment_history=()
+        )
 
     @property
     def output_size(self):
         return self._output_size
 
     def zero_state(self, batch_size, dtype):
-        alignment_shape = tf.TensorShape([batch_size, None, None]).merge_with(self.state_size[2])
         return CNNAttentionWrapperState(cell_state=self.convolution.zero_state(batch_size, dtype),
                                         time=tf.zeros(shape=[], dtype=tf.int32),
-                                        alignments=tf.zeros(shape=alignment_shape, dtype=dtype),
-                                        alignment_history=tf.TensorArray(dtype=dtype, size=0, dynamic_size=True),
-                                        mask=None,
-                                        last_attended=None)
+                                        alignments=self.attention.attention_mechanism.initial_alignment(batch_size,
+                                                                                                        self.r, dtype),
+                                        alignment_history=tf.TensorArray(dtype=dtype, size=0, dynamic_size=True))
 
     def build(self, input_shape):
         self.built = True
 
-    def call(self, inputs, state):
-        query, keys, values = inputs
+    def call(self, query, state=None):
+        # ToDo: remove
+        if state is None:
+            state = self.zero_state(query.shape[0].value, query.dtype)
+
         residual = query
         if self.is_incremental:
             query, next_cell_state = self.convolution(query, state.cell_state)
         else:
             query = self.convolution(query)
 
-        output, attention_scores = self.attention(AttentionInput(query, keys, values), mask=state.mask,
-                                                  last_attended=state.last_attended)
+        # ToDo: properly set mask and last_attended
+        output, attention_scores = self.attention(query, mask=None,
+                                                  last_attended=None)
         alignment_history = state.alignment_history.write(state.time, attention_scores)
         output = (output + residual) * math.sqrt(0.5)
-        # ToDo: properly set mask and last_attended
-        return output, CNNAttentionWrapperState(next_cell_state, state.time + 1, attention_scores, alignment_history,
-                                                mask=None, last_attended=None)
+        if self.is_incremental:
+            return output, CNNAttentionWrapperState(next_cell_state, state.time + 1, attention_scores,
+                                                    alignment_history)
+        else:
+            return output
 
