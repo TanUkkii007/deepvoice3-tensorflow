@@ -3,20 +3,22 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers, floats, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer, CNNAttentionWrapper, MultiHopAttention, MultiHopAttentionArgs
+from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer, CNNAttentionWrapper, \
+    MultiHopAttention, MultiHopAttentionArgs
 from tensorflow.python.util import nest
 
 
 @composite
 def attention_tensors(draw, b_size=integers(1, 5), t_query_size=integers(2, 20), c_size=integers(1, 10),
-                      t_encoder_size=integers(2, 10), embed_dim=integers(1, 10), elements=integers(-5, 5)):
+                      t_encoder_size=integers(2, 10), embed_dim=integers(1, 10), query_elements=integers(-5, 5),
+                      encoder_elements=integers(-5, 5)):
     b = draw(b_size)
     t_query = draw(t_query_size)
     c = draw(c_size)
     t_encoder = draw(t_encoder_size)
     embed = draw(embed_dim)
-    query = draw(arrays(dtype=np.float32, shape=[b, t_query, c], elements=elements))
-    encoder = draw(arrays(dtype=np.float32, shape=[b, t_encoder, embed], elements=elements))
+    query = draw(arrays(dtype=np.float32, shape=[b, t_query, c], elements=query_elements))
+    encoder = draw(arrays(dtype=np.float32, shape=[b, t_encoder, embed], elements=encoder_elements))
     return (b, t_query, c, t_encoder, embed, query, encoder)
 
 
@@ -31,7 +33,7 @@ class AttentionLayerTest(tf.test.TestCase):
         query = tf.constant(query)
         encoder_out = tf.constant(encoder_out)
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim)
+        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim, weight_initializer_seed=789)
 
         attention = AttentionLayer(attention_mechanism, C, dropout)
         output = attention.apply(query)
@@ -53,7 +55,7 @@ class AttentionLayerTest(tf.test.TestCase):
         query = tf.constant(query)
         encoder_out = tf.constant(encoder_out)
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim)
+        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim, weight_initializer_seed=789)
         attention = CNNAttentionWrapper(attention_mechanism, C, out_channels, kernel_size, dilation, dropout,
                                         is_incremental=False, r=r, kernel_initializer_seed=123,
                                         weight_initializer_seed=456)
@@ -108,9 +110,9 @@ class AttentionLayerTest(tf.test.TestCase):
         query = tf.constant(query)
         encoder_out = tf.constant(encoder_out)
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim)
+        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim, weight_initializer_seed=789)
         args = [MultiHopAttentionArgs(out_channels, kernel_size, dilation, dropout, r, kernel_initializer_seed=123,
-                                        weight_initializer_seed=456)] * 3
+                                      weight_initializer_seed=456)] * 3
         attention = MultiHopAttention(attention_mechanism, C, args, is_incremental=False)
         output, _states = attention.apply(query, attention.zero_state(B, tf.float32))
 
@@ -146,6 +148,7 @@ class AttentionLayerTest(tf.test.TestCase):
         print(output_online)
         print("---------------")
         self.assertAllClose(output, output_online, atol=1e-4)
+
 
 if __name__ == '__main__':
     tf.test.main()
