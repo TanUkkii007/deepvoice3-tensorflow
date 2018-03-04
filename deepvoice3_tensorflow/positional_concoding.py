@@ -25,7 +25,7 @@ class PositionalEncoding(object):
 
     @property
     def value(self):
-        return self.value
+        return self._value
 
     def sinusoidal_encode(self, position_rate=1.0):
         odd = self._value[:, 0::2]
@@ -41,7 +41,7 @@ class PositionalEncoding(object):
             value_at(pos, i) for i in
             range(dimension)
         ] for pos in range(n_position)]
-        return PositionalEncoding(tf.constant(np.array(values)), n_position, dimension)
+        return PositionalEncoding(tf.constant(np.array(values), dtype=tf.float32), n_position, dimension)
 
 
 class SinusoidalEncoding(object):

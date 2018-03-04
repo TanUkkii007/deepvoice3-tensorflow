@@ -45,17 +45,18 @@ class SinusoidalEncodingEmbedding(tf.layers.Layer):
         super(SinusoidalEncodingEmbedding, self).__init__(name=name, trainable=trainable, **kwargs)
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
+        self.initial_pe = PositionalEncoding.initial_value(self.num_embeddings, self.embedding_dim, position_rate=1.0)
+
 
     def build(self, input_shape):
-        initial_pe = PositionalEncoding.initial_value(self.num_embeddings, self.embedding_dim, position_rate=1.0)
-        self.weight = self.add_variable("weight", shape=initial_pe.shape, dtype=tf.float32,
-                                        initializer=tf.constant_initializer(initial_pe.value,
-                                                                            verify_shape=True))
+        initializer = lambda shape, dtype, partition_info: self.initial_pe.value
+        self.weight = self.add_variable("weight", shape=self.initial_pe.shape, dtype=tf.float32,
+                                        initializer=initializer)
         self.built = True
 
     def call(self, x, w=1.0):
         encoded = PositionalEncoding(self.weight, self.num_embeddings, self.embedding_dim).sinusoidal_encode(w)
-        return tf.nn.embedding_lookup(encoded, x)
+        return tf.nn.embedding_lookup(encoded.value, x)
 
 
 def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embedding'):
