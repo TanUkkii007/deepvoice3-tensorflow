@@ -4,7 +4,7 @@ from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers, floats, composite
 from hypothesis.extra.numpy import arrays
 from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer, CNNAttentionWrapper, \
-    MultiHopAttention, MultiHopAttentionArgs
+    MultiHopAttention, MultiHopAttentionArgs, CNNAttentionWrapperInput
 from tensorflow.python.util import nest
 
 
@@ -31,9 +31,9 @@ class AttentionLayerTest(tf.test.TestCase):
         assume(B * T_query * C > 1)
         assume(B * T_encoder * embed_dim > 1)
         query = tf.constant(query)
-        encoder_out = tf.constant(encoder_out)
+        keys, values = tf.constant(encoder_out), tf.constant(encoder_out)
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim, weight_initializer_seed=789)
+        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, embed_dim, weight_initializer_seed=789)
 
         attention = AttentionLayer(attention_mechanism, C, dropout)
         output = attention.apply(query)
@@ -53,9 +53,9 @@ class AttentionLayerTest(tf.test.TestCase):
         dropout = 1.0
         out_channels = C
         query = tf.constant(query)
-        encoder_out = tf.constant(encoder_out)
+        keys, values = tf.constant(encoder_out), tf.constant(encoder_out)
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim, weight_initializer_seed=789)
+        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, embed_dim, weight_initializer_seed=789)
         attention = CNNAttentionWrapper(attention_mechanism, C, out_channels, kernel_size, dilation, dropout,
                                         is_incremental=False, r=r, kernel_initializer_seed=123,
                                         weight_initializer_seed=456)
@@ -108,20 +108,24 @@ class AttentionLayerTest(tf.test.TestCase):
         dropout = 1.0
         out_channels = C
         query = tf.constant(query)
-        encoder_out = tf.constant(encoder_out)
+        keys, values = tf.constant(encoder_out), tf.constant(encoder_out)
+        frame_pos_embed = tf.zeros(shape=(B, T_query, out_channels))
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(encoder_out, embed_dim, weight_initializer_seed=789)
-        args = [MultiHopAttentionArgs(out_channels, kernel_size, dilation, dropout, r, kernel_initializer_seed=123,
+        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, embed_dim, weight_initializer_seed=789)
+        args = [MultiHopAttentionArgs(out_channels, kernel_size, dilation, dropout, kernel_initializer_seed=123,
                                       weight_initializer_seed=456)] * 3
-        attention = MultiHopAttention(attention_mechanism, C, args, is_incremental=False)
-        output, _states = attention.apply(query, attention.zero_state(B, tf.float32))
+        attention = MultiHopAttention(attention_mechanism, C, args, r, is_incremental=False)
+        input = CNNAttentionWrapperInput(query, frame_pos_embed)
+        output, _states = attention.apply(input, attention.zero_state(B, tf.float32))
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
-            output = sess.run(output)
+            output = sess.run(output).query
         print(output)
 
-        attention_incremental = MultiHopAttention(attention_mechanism, C, args, is_incremental=True)
+        attention_incremental = MultiHopAttention(attention_mechanism, C, args, r, is_incremental=True)
+
+        frame_pos_embed_incremental = tf.zeros(shape=(B, 1, out_channels))
 
         def condition(time, unused_inputs, unused_state, unused_outputs):
             return tf.less(time, T_query)
@@ -129,8 +133,9 @@ class AttentionLayerTest(tf.test.TestCase):
         def body(time, inputs, state, outputs):
             # ToDo: slice time:time+reduction_factor
             btc_one = tf.reshape(inputs[:, time:time + r, :], shape=(B, -1, C))
-            out_online, next_states = attention_incremental.apply(btc_one, state)
-            return (time + r, inputs, next_states, outputs.write(time, out_online))
+            input = CNNAttentionWrapperInput(btc_one, frame_pos_embed_incremental)
+            out_online, next_states = attention_incremental.apply(input, state)
+            return (time + r, inputs, next_states, outputs.write(time, out_online.query))
 
         time = tf.constant(0)
         outputs_ta = tf.TensorArray(dtype=tf.float32, size=T_query, element_shape=tf.TensorShape([B, 1, C]))
