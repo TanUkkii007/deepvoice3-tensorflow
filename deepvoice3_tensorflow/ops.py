@@ -93,19 +93,19 @@ class Conv1dIncremental(tf.layers.Layer):
         if input_buffer is None:
             raise ValueError("input_buffer tensor is required")
         input_buffer_shape = input_buffer.get_shape()
-        kw = self.kernel_size
+
         dilation = self.dilation
-        if kw > 1:
-            input_buffer = tf.slice(input_buffer, begin=[0, 1, 0], size=[-1, -1, -1])
-            # append next input
-            input_buffer = tf.concat(
-                [input_buffer,
-                 tf.slice(inputs, begin=[0, tf.shape(inputs)[1] - 1, 0], size=[-1, -1, -1])],
-                axis=1)
-            input_buffer.set_shape(input_buffer_shape)
-            next_input_buffer = input_buffer
-            if dilation > 1:
-                input_buffer = input_buffer[:, 0::dilation, :]
+
+        input_buffer = tf.slice(input_buffer, begin=[0, 1, 0], size=[-1, -1, -1])
+        # append next input
+        input_buffer = tf.concat(
+            [input_buffer,
+             tf.slice(inputs, begin=[0, tf.shape(inputs)[1] - 1, 0], size=[-1, -1, -1])],
+            axis=1)
+        input_buffer.set_shape(input_buffer_shape)
+        next_input_buffer = input_buffer
+        if dilation > 1:
+            input_buffer = input_buffer[:, 0::dilation, :]
 
         # (out_channels, in_channels, dilation(kernel_size))
         weight = tf.transpose(self.weight, perm=[0, 2, 1])

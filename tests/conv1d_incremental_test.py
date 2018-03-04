@@ -28,7 +28,7 @@ class Conv1dIncrementalTest(tf.test.TestCase):
 
         self.assertAllEqual(ref, result)
 
-    @given(B=integers(1, 3), T=integers(10, 30), C=integers(1, 4), kernel_size=integers(2, 9), dilation=integers(1, 27))
+    @given(B=integers(1, 3), T=integers(10, 30), C=integers(1, 4), kernel_size=integers(1, 9), dilation=integers(1, 27))
     @settings(max_examples=10, timeout=unlimited)
     def test_conv1d_incremental(self, kernel_size, dilation, T, B, C):
         bct_value = np.zeros(shape=[B, C, T], dtype=np.float32) + (
