@@ -151,7 +151,9 @@ class CNNAttentionWrapper(CNNCell):
                  trainable=True,
                  name=None, **kwargs):
         super(CNNAttentionWrapper, self).__init__(name=name, trainable=trainable, **kwargs)
-        self.convolution = Conv1dGLU(in_channels, in_channels, kernel_size,
+        # To support residual connection in_channels == out_channels is necessary.
+        assert in_channels == out_channels
+        self.convolution = Conv1dGLU(in_channels, out_channels, kernel_size,
                                      dropout=dropout, dilation=dilation, residual=False,
                                      kernel_initializer_seed=kernel_initializer_seed,
                                      is_incremental=is_incremental)
@@ -320,6 +322,8 @@ class Decoder(tf.layers.Layer):
                  use_memory_mask=False,
                  query_position_rate=1.0,
                  key_position_rate=1.29,
+                 max_decoder_steps=200,
+                 min_decoder_steps=10,
                  is_incremental=False,
                  training=False, trainable=True,
                  name=None, **kwargs):
@@ -346,14 +350,16 @@ class Decoder(tf.layers.Layer):
                                in_features, out_features in preattention]
         self.preattention = DecoderPrenetFC(params=preattention_params, is_incremental=is_incremental)
 
+        assert self.preattention.output_size == self.embed_query_positions.embedding_dim
+
         out_channels = mh_attentions[-1].out_channels
         self.last_conv = Conv1d(out_channels, in_dim * r, kernel_size=1, dilation=1, activation=None, dropout=dropout,
                                 is_incremental=is_incremental, is_training=training)
 
         self.fc = Linear(in_dim * r, 1)
 
-        self.max_decoder_steps = 200
-        self.min_decoder_steps = 10
+        self.max_decoder_steps = max_decoder_steps
+        self.min_decoder_steps = min_decoder_steps
         self.use_memory_mask = use_memory_mask
 
         self.is_incremental = is_incremental
