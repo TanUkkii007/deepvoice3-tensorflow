@@ -427,13 +427,23 @@ class Decoder(tf.layers.Layer):
         attention = MultiHopAttention(attention_mechanism, self.preattention.output_size,
                                       self.mh_attentions, self.r, self.is_incremental)
 
+        test_input_length = 0 if test_inputs is None else test_inputs.shape[1].value
+        # append one element to avoid index overflow
+        test_inputs = test_inputs if test_inputs is None else self.append_unused_final_test_input(test_inputs, batch_size)
+
         def condition(time, unused_input, unused_attention_state, unused_frame_pos, unused_last_conv_state,
                       unused_outputs, done):
             termination_criteria = tf.greater(done, 0.5)
             minimum_requirement = tf.greater(time, self.min_decoder_steps)
-            maximum_criteria = tf.greater(time, self.max_decoder_steps)
-            result = tf.logical_or(tf.logical_and(termination_criteria, minimum_requirement), maximum_criteria)
+            maximum_criteria = tf.less(time, self.max_decoder_steps)
+            termination = tf.logical_or(tf.logical_and(termination_criteria, minimum_requirement), maximum_criteria)
+            # tf.while_loop continues body until cond returns False
+            result = tf.logical_not(termination)
             return tf.squeeze(tf.reduce_all(result, axis=0))
+
+        def test_condition(time, unused_input, unused_attention_state, unused_frame_pos, unused_last_conv_state,
+                      unused_outputs, done):
+            return tf.less(time, test_input_length)
 
         def body(time, input, attention_state, frame_pos, last_conv_state, outputs, done):
             w = self.query_position_rate
@@ -447,19 +457,23 @@ class Decoder(tf.layers.Layer):
             output = tf.sigmoid(x)
             # Done flag
             done = tf.squeeze(tf.sigmoid(self.fc(x)), axis=[1, 2])
+            outputs = outputs.write(time, output)
             next_time = time + 1
             next_frame_pos = tf.fill(dims=(batch_size, 1), value=next_time)
+            output = output if test_inputs is None else tf.expand_dims(test_inputs[:, next_time, :], axis=1)
             return (
                 next_time, output, next_attention_states, next_frame_pos, next_last_conv_state,
-                outputs.write(time, output),
+                outputs,
                 done)
 
         time = tf.constant(0)
         outputs_ta = tf.TensorArray(dtype=tf.float32, size=self.max_decoder_steps,
                                     element_shape=tf.TensorShape([batch_size, 1, self.in_dim * self.r]))
         initial_done = tf.constant(shape=[batch_size], value=0, dtype=tf.float32)
-        _, _, final_attention_state, _, _, out_online_ta, _ = tf.while_loop(condition, body, (
-            time, self.initial_input(batch_size), attention.zero_state(batch_size, tf.float32),
+        condition_function = condition if test_inputs is None else test_condition
+        initial_input = self.initial_input(batch_size) if test_inputs is None else tf.expand_dims(test_inputs[:, 0, :], axis=1)
+        _, _, final_attention_state, _, _, out_online_ta, _ = tf.while_loop(condition_function, body, (
+            time, initial_input, attention.zero_state(batch_size, tf.float32),
             self.initial_frame_pos(batch_size), self.last_conv.zero_state(batch_size, tf.float32), outputs_ta,
             initial_done))
         output_online = nest.map_structure(lambda ta: ta.stack(), out_online_ta)
@@ -478,3 +492,7 @@ class Decoder(tf.layers.Layer):
         # frame pos start with 1.
         time = 1
         return tf.fill(dims=(batch_size, 1), value=time)
+
+    def append_unused_final_test_input(self, test_input, batch_size):
+        final_input = tf.zeros(shape=(batch_size, 1, self.in_dim * self.r))
+        return tf.concat([test_input, final_input], axis=1)

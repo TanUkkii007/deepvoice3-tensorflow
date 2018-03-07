@@ -9,7 +9,7 @@ even_number = lambda x: x % 2 == 0
 
 
 @composite
-def query_tensor(draw, batch_size, c, t_size=integers(2, 20), elements=integers(-5, 5)):
+def query_tensor(draw, batch_size, c, t_size=integers(2, 20), elements=integers(-5, 5).filter(lambda x: x != 0)):
     t = draw(t_size)
     btc = draw(arrays(dtype=np.float32, shape=[batch_size, t, c], elements=elements))
     return btc
@@ -51,6 +51,7 @@ class DecoderTest(tf.test.TestCase):
            num_mha=integers(1, 4))
     @settings(max_examples=3, timeout=unlimited)
     def test_decoder(self, args, num_preattention, num_mha):
+        tf.set_random_seed(12345678)
         query, mha_arg, memory, in_dim, r = args
         batch_size = 1
         max_positions = 30
@@ -76,7 +77,7 @@ class DecoderTest(tf.test.TestCase):
                             frame_positions=frame_positions)
 
         out_online = decoder_online((keys, values),
-                                    frame_positions=frame_positions, text_positions=text_positions)
+                                    frame_positions=frame_positions, text_positions=text_positions, test_inputs=tf.constant(query))
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
@@ -86,3 +87,33 @@ class DecoderTest(tf.test.TestCase):
             print(out_online)
             print("-" * 100)
             self.assertAllClose(out, out_online)
+
+    @given(args=all_args(), num_preattention=integers(1, 1),
+           num_mha=integers(1, 4))
+    @settings(max_examples=3, timeout=unlimited)
+    def test_decoder_inference(self, args, num_preattention, num_mha):
+        query, mha_arg, memory, in_dim, r = args
+        batch_size = 1
+        max_positions = 30
+        T_query = query.shape[1]
+        embed_dim = memory.shape[2]
+        T_memory = memory.shape[1]
+        assume(T_query < max_positions and T_memory < max_positions)
+        preattention_in_features = r * in_dim
+        preattention_args = ((preattention_in_features, mha_arg.out_channels),) * num_preattention
+        decoder_online = Decoder(embed_dim, in_dim, r, max_positions, preattention=preattention_args,
+                                 mh_attentions=(mha_arg,) * num_mha,
+                                 dropout=1.0, max_decoder_steps=T_query, min_decoder_steps=T_query, is_incremental=True)
+
+        frame_positions = tf.zeros(shape=(batch_size, T_query), dtype=tf.int32) + tf.range(0, T_query, dtype=tf.int32)
+        text_positions = tf.zeros(shape=(batch_size, T_memory), dtype=tf.int32) + tf.range(0, T_memory, dtype=tf.int32)
+
+        keys, values = tf.constant(memory), tf.constant(memory)
+        out_online = decoder_online((keys, values),
+                                    frame_positions=frame_positions, text_positions=text_positions)
+
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            out_online = sess.run(out_online)
+            print(out_online)
+            print("-" * 100)
