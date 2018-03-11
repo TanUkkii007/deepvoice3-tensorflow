@@ -19,8 +19,9 @@ class LinearTest(tf.test.TestCase):
     @given(inputs=input_tensor(), seed=integers(0, 1234567))
     @settings(max_examples=10, timeout=unlimited)
     def test_linear(self, inputs, seed):
+        tf.set_random_seed(seed)
         batch_size, input_length, in_features, out_features, input = inputs
-        linear = Linear(in_features, out_features, dropout=1.0, weight_initializer_seed=seed)
+        linear = Linear(in_features, out_features, dropout=1.0)
         batches = [linear(tf.constant(b)) for b in [input[i] for i in range(0, batch_size)]]
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())

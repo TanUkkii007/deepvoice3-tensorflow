@@ -2,6 +2,7 @@ import tensorflow as tf
 from deepvoice3_tensorflow.positional_concoding import PositionalEncoding
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers
+import numpy as np
 
 
 class PositionalEncodingTest(tf.test.TestCase):
@@ -23,7 +24,8 @@ class PositionalEncodingTest(tf.test.TestCase):
         y = y[1:, :] # drop position 0
         with self.test_session() as sess:
             x, y = sess.run([x, y])
-            self.assertAllClose(x, y)
+            print("max diff", np.max(np.abs(y - x)))
+            self.assertAllClose(x, y, atol=1e-4)
 
 if __name__ == '__main__':
     tf.test.main()

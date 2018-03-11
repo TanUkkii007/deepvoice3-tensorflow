@@ -106,7 +106,7 @@ class SinusoidalEncoding(object):
         odd_factor = factor[0::2]
         even_factor = factor[1::2]
         odd_even_factor = np.stack([odd_factor, even_factor]).transpose((1, 0, 2))  # (dimension//2, 2, 2)
-        shifted = tf.matmul(tf.constant(odd_even_factor), odd_even)  # (dimension//2, 2, n_position)
+        shifted = tf.matmul(tf.constant(odd_even_factor, dtype=tf.float32), odd_even)  # (dimension//2, 2, n_position)
         new_odd = tf.transpose(shifted[:, 0, :], perm=(1,0))
         new_even = tf.transpose(shifted[:, 1, :], perm=(1,0))
         return SinusoidalEncoding(new_odd, new_even, self._pe)

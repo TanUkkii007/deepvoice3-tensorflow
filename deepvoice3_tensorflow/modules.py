@@ -6,22 +6,19 @@ from .positional_concoding import PositionalEncoding
 import math
 
 
-def linear(inputs, in_features, out_features, dropout=1, weight_initializer_seed=None):
-    module = Linear(in_features, out_features, dropout, weight_initializer_seed)
-    return module.apply(inputs)
-
-
 class Linear(tf.layers.Layer):
     """Weight-normalized Linear layer (input: B x T x C)"""
 
-    def __init__(self, in_features, out_features, dropout=1, weight_initializer_seed=None, trainable=True,
+    def __init__(self, in_features, out_features, dropout=1, weight_initializer=None, bias_initializer=None, trainable=True,
                  name=None, **kwargs):
         super(Linear, self).__init__(name=name, trainable=trainable, **kwargs)
         self.in_features = in_features
         self.out_features = out_features
         stddev = math.sqrt(dropout / in_features)
-        self.weight_initializer = tf.truncated_normal_initializer(mean=0,
-                                                                  stddev=stddev, seed=weight_initializer_seed)
+        self.weight_initializer = weight_initializer if weight_initializer is not None else tf.truncated_normal_initializer(
+            mean=0,
+            stddev=stddev)
+        self.bias_initializer = bias_initializer if bias_initializer is not None else tf.zeros_initializer()
 
     def build(self, input_shape):
         if not self.built:
@@ -30,7 +27,7 @@ class Linear(tf.layers.Layer):
                                        initializer=self.weight_initializer,
                                        trainable=False)
             self.normalized_weight = weight_normalization(weight)
-            self.bias = self.add_variable("bias", shape=(self.out_features), initializer=tf.zeros_initializer())
+            self.bias = self.add_variable("bias", shape=(self.out_features), initializer=self.bias_initializer)
             self.built = True
 
     def call(self, inputs, training=False):
@@ -47,7 +44,6 @@ class SinusoidalEncodingEmbedding(tf.layers.Layer):
         self.embedding_dim = embedding_dim
         self.initial_pe = PositionalEncoding.initial_value(self.num_embeddings, self.embedding_dim, position_rate=1.0)
 
-
     def build(self, input_shape):
         initializer = lambda shape, dtype, partition_info: self.initial_pe.value
         self.weight = self.add_variable("weight", shape=self.initial_pe.shape, dtype=tf.float32,
@@ -57,22 +53,6 @@ class SinusoidalEncodingEmbedding(tf.layers.Layer):
     def call(self, x, w=1.0):
         encoded = PositionalEncoding(self.weight, self.num_embeddings, self.embedding_dim).sinusoidal_encode(w)
         return tf.nn.embedding_lookup(encoded.value, x)
-
-
-def embedding(num_embeddings, embedding_dim, inputs, stddev=0.01, name='embedding'):
-    '''
-
-    :param num_embeddings:
-    :param embedding_dim:
-    :param inputs: int32 Tensor with shape [N, T_in] where N is batch size, T_in is number of
-        steps in the input time series, and values are character IDs
-    :param stddev:
-    :param name:
-    :return: (N, T_in, embedding_dim)
-    '''
-    embedding_table = tf.get_variable(name, [num_embeddings, embedding_dim], dtype=tf.float32
-                                      , initializer=tf.truncated_normal_initializer(stddev=stddev))
-    return tf.nn.embedding_lookup(embedding_table, inputs)
 
 
 class Conv1d(CNNCell):
@@ -166,7 +146,7 @@ class Conv1dGLU(CNNCell):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 dropout, dilation=1, residual=False, kernel_initializer_seed=None,
+                 dropout, dilation=1, residual=False, kernel_initializer=None, bias_initializer=None,
                  is_incremental=False, is_training=False, trainable=True, name=None):
         assert in_channels % 2 == 0
         super(Conv1dGLU, self).__init__(name=name, trainable=trainable)
@@ -180,10 +160,10 @@ class Conv1dGLU(CNNCell):
         std_factor = 4.0
         self.kernel_stddev = math.sqrt((std_factor * dropout) / (float(kernel_size) * in_channels))
 
-        self.kernel_initializer = tf.truncated_normal_initializer(mean=0.,
-                                                                  stddev=self.kernel_stddev,
-                                                                  seed=kernel_initializer_seed)
-        self.bias_initializer = tf.zeros_initializer()
+        self.kernel_initializer = kernel_initializer if kernel_initializer is not None else tf.truncated_normal_initializer(
+            mean=0.,
+            stddev=self.kernel_stddev)
+        self.bias_initializer = bias_initializer if bias_initializer is not None else tf.zeros_initializer()
 
         self.convolution = Conv1d(in_channels, 2 * out_channels, kernel_size, dilation, activation=None,
                                   is_incremental=is_incremental,
@@ -192,6 +172,7 @@ class Conv1dGLU(CNNCell):
                                   kernel_initializer=self.kernel_initializer,
                                   bias_initializer=self.bias_initializer,
                                   normalize_weight=True)
+        self.training = is_training
 
     def build(self, input_shape):
         in_channels_tensor = input_shape[2]
@@ -202,13 +183,13 @@ class Conv1dGLU(CNNCell):
 
     def call(self, inputs, input_buffer=None):
         residual = inputs
-        x = tf.nn.dropout(inputs, self.dropout)
+        x = tf.layers.dropout(inputs, rate=1. - self.dropout, training=self.training)
         # split at C
         splitdim = -1
         if self.is_incremental:
-            x, next_input_buffer = self.convolution(inputs, input_buffer)
+            x, next_input_buffer = self.convolution(x, input_buffer)
         else:
-            x = self.convolution(inputs)
+            x = self.convolution(x)
 
         a, b = tf.split(x, num_or_size_splits=2, axis=splitdim)
         # apply GLU

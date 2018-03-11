@@ -9,7 +9,9 @@ from tensorflow.python.util import nest
 
 class ScaledDotProductAttentionMechanism(AttentionMechanism):
     def __init__(self, keys, values, embed_dim, window_ahead=3, window_backward=1, dropout=1.0, use_key_projection=True,
-                 use_value_projection=True, weight_initializer_seed=None):
+                 use_value_projection=True, key_projection_weight_initializer=None,
+                 key_projection_bias_initializer=None, value_projection_weight_initializer=None,
+                 value_projection_bias_initializer=None):
         '''
         :param memory: (B, src_len, embed_dim)
         :param embed_dim:
@@ -21,13 +23,15 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         '''
         if use_key_projection:
             key_projection = Linear(embed_dim, embed_dim, dropout=dropout,
-                                    weight_initializer_seed=weight_initializer_seed, name="key_projection")
+                                    weight_initializer=key_projection_weight_initializer,
+                                    bias_initializer=key_projection_bias_initializer, name="key_projection")
             self._keys = key_projection(keys)
         else:
             self._keys = keys
         if use_value_projection:
             value_projection = Linear(embed_dim, embed_dim, dropout=dropout,
-                                      weight_initializer_seed=weight_initializer_seed, name="value_projection")
+                                      weight_initializer=value_projection_weight_initializer,
+                                      bias_initializer=value_projection_bias_initializer, name="value_projection")
             self._values = value_projection(values)
         else:
             self._values = values
@@ -108,21 +112,24 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
 
 
 class AttentionLayer(tf.layers.Layer):
-    def __init__(self, attention_mechanism, conv_channels, dropout=1.0, weight_initializer_seed=None, trainable=True,
+    def __init__(self, attention_mechanism, conv_channels, dropout=1.0, query_projection_weight_initializer=None,
+                 out_projection_weight_initializer=None, trainable=True,
                  name=None, **kwargs):
         super(AttentionLayer, self).__init__(name=name, trainable=trainable, **kwargs)
         self.attention_mechanism = attention_mechanism
         self.conv_channels = conv_channels
         self.dropout = dropout
-        self.weight_initializer_seed = weight_initializer_seed
+        self.query_projection_weight_initializer = query_projection_weight_initializer
+        self.out_projection_weight_initializer = out_projection_weight_initializer
 
     def build(self, input_shape):
         conv_channels = self.conv_channels
         embed_dim = self.attention_mechanism.embed_dim
         self.query_projection = Linear(conv_channels, embed_dim, dropout=self.dropout,
-                                       weight_initializer_seed=self.weight_initializer_seed, name="query_projection")
+                                       weight_initializer=self.query_projection_weight_initializer,
+                                       name="query_projection")
         self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout,
-                                     weight_initializer_seed=self.weight_initializer_seed, name="out_projection")
+                                     weight_initializer=self.out_projection_weight_initializer, name="out_projection")
 
     def call(self, query, mask=None, last_attended=None):
         residual = query
@@ -147,7 +154,9 @@ CNNAttentionWrapperInput = namedtuple("CNNAttentionWrapperInput", ["query", "fra
 
 class CNNAttentionWrapper(CNNCell):
     def __init__(self, attention_mechanism, in_channels, out_channels, kernel_size, dilation, dropout,
-                 is_incremental, r, kernel_initializer_seed=None, weight_initializer_seed=None,
+                 is_incremental, r, kernel_initializer=None, query_projection_weight_initializer=None,
+                 out_projection_weight_initializer=None,
+                 training=False,
                  trainable=True,
                  name=None, **kwargs):
         super(CNNAttentionWrapper, self).__init__(name=name, trainable=trainable, **kwargs)
@@ -155,11 +164,13 @@ class CNNAttentionWrapper(CNNCell):
         assert in_channels == out_channels
         self.convolution = Conv1dGLU(in_channels, out_channels, kernel_size,
                                      dropout=dropout, dilation=dilation, residual=False,
-                                     kernel_initializer_seed=kernel_initializer_seed,
-                                     is_incremental=is_incremental)
+                                     kernel_initializer=kernel_initializer,
+                                     is_incremental=is_incremental,
+                                     is_training=training)
 
         self.attention = AttentionLayer(attention_mechanism, out_channels, dropout,
-                                        weight_initializer_seed=weight_initializer_seed)
+                                        query_projection_weight_initializer=query_projection_weight_initializer,
+                                        out_projection_weight_initializer=out_projection_weight_initializer)
         self._is_incremental = is_incremental
         self._output_size = out_channels
         self.r = r
@@ -230,23 +241,25 @@ class CNNAttentionWrapper(CNNCell):
                                                                                                alignment_history)
 
 
-MultiHopAttentionArgs = namedtuple("MultiHopAttentionArgs", ["out_channels", "kernel_size", "dilation", "dropout",
-                                                             "kernel_initializer_seed",
-                                                             "weight_initializer_seed"])
+MultiHopAttentionArgs = namedtuple("MultiHopAttentionArgs", ["out_channels", "kernel_size", "dilation", "dropout"])
 
 
 class MultiHopAttention(CNNCell):
     def __init__(self, attention_mechanism, in_channels, convolutions, r, is_incremental,
+                 kernel_initializer=None, query_projection_weight_initializer=None,
+                 out_projection_weight_initializer=None,
+                 training=False,
                  trainable=True,
                  name=None, **kwargs):
         super(MultiHopAttention, self).__init__(name=name, trainable=trainable, **kwargs)
         cells = []
         next_in_channels = in_channels
-        for i, (out_channels, kernel_size, dilation, dropout, kernel_initializer_seed,
-                weight_initializer_seed) in enumerate(convolutions):
+        for i, (out_channels, kernel_size, dilation, dropout) in enumerate(convolutions):
             aw = CNNAttentionWrapper(attention_mechanism, next_in_channels, out_channels, kernel_size,
-                                     dilation, dropout, is_incremental, r, kernel_initializer_seed,
-                                     weight_initializer_seed)
+                                     dilation, dropout, is_incremental, r, kernel_initializer,
+                                     query_projection_weight_initializer,
+                                     out_projection_weight_initializer,
+                                     training)
             next_in_channels = aw.output_size
             cells.append(aw)
         self.layer = MultiCNNCell(cells, is_incremental)
@@ -292,15 +305,23 @@ def DecoderPreNetCNN(params, dropout=0.9, is_incremental=False):
     return layer
 
 
+DecoderPrenetFCArgs = namedtuple("DecoderPrenetFCArgs", ["in_features", "out_features", "dropout"])
+
+
 class DecoderPrenetFC(tf.layers.Layer):
-    def __init__(self, params, dropout=0.9, weight_initializer_seed=None, is_incremental=False, trainable=True,
+    def __init__(self, params, weight_initializer=None, bias_initializer=None, is_incremental=False,
+                 training=False,
+                 trainable=True,
                  name=None, **kwargs):
         super(DecoderPrenetFC, self).__init__(name=name, trainable=trainable, **kwargs)
         # ToDo: support in_channels != out_channels
         self.layers = [
-            Linear(in_features, out_features, dropout=dropout, weight_initializer_seed=weight_initializer_seed) for
-            in_features, out_features in params]
+            [Linear(in_features, out_features, dropout=dropout, weight_initializer=weight_initializer,
+                    bias_initializer=bias_initializer),
+             tf.layers.Dropout(rate=1. - dropout)] for
+            in_features, out_features, dropout in params]
         self._output_size = params[-1][1]
+        self.training = training
 
     @property
     def output_size(self):
@@ -311,20 +332,34 @@ class DecoderPrenetFC(tf.layers.Layer):
 
     def call(self, inputs, **kwargs):
         next_input = inputs
-        for layer in self.layers:
-            next_input = tf.nn.relu(layer(next_input))
+        for [layer, dropout] in self.layers:
+            next_input = tf.nn.relu(dropout(layer(next_input), training=self.training))
         return next_input
 
 
 class Decoder(tf.layers.Layer):
-    def __init__(self, embed_dim, in_dim=80, r=5, max_positions=512, preattention=((128, 5),) * 4,
-                 mh_attentions=(MultiHopAttentionArgs(128, 5, 1, 0.9, None, None),) * 4, dropout=0.9,
+    def __init__(self, embed_dim, in_dim=80, r=5, max_positions=512,
+                 preattention=(DecoderPrenetFCArgs(128, 5, 0.9),) * 4,
+                 mh_attentions=(MultiHopAttentionArgs(128, 5, 1, 0.9),) * 4, dropout=0.9,
                  use_memory_mask=False,
                  query_position_rate=1.0,
                  key_position_rate=1.29,
                  max_decoder_steps=200,
                  min_decoder_steps=10,
                  is_incremental=False,
+                 prenet_weight_initializer=None,
+                 prenet_bias_initializer=None,
+                 attention_key_projection_weight_initializer=None,
+                 attention_key_projection_bias_initializer=None,
+                 attention_value_projection_weight_initializer=None,
+                 attention_value_projection_bias_initializer=None,
+                 attention_kernel_initializer=None,
+                 attention_query_projection_weight_initializer=None,
+                 attention_out_projection_weight_initializer=None,
+                 last_conv_kernel_initializer=None,
+                 last_conv_bias_initializer=None,
+                 done_weight_initializer=None,
+                 done_bias_initializer=None,
                  training=False, trainable=True,
                  name=None, **kwargs):
         super(Decoder, self).__init__(name=name, trainable=trainable, **kwargs)
@@ -346,23 +381,38 @@ class Decoder(tf.layers.Layer):
 
         in_features = in_dim * r
         assert preattention[0][0] == in_dim * r
-        preattention_params = [(in_features, out_features) for
-                               in_features, out_features in preattention]
-        self.preattention = DecoderPrenetFC(params=preattention_params, is_incremental=is_incremental)
+        # preattention_params = [(in_features, out_features, dropout) for
+        #                        in_features, out_features, dropout in preattention]
+        self.preattention = DecoderPrenetFC(params=preattention, is_incremental=is_incremental,
+                                            weight_initializer=prenet_weight_initializer,
+                                            bias_initializer=prenet_bias_initializer, training=training)
 
         assert self.preattention.output_size == self.embed_query_positions.embedding_dim
 
         out_channels = mh_attentions[-1].out_channels
         self.last_conv = Conv1d(out_channels, in_dim * r, kernel_size=1, dilation=1, activation=None, dropout=dropout,
-                                is_incremental=is_incremental, is_training=training)
+                                is_incremental=is_incremental, is_training=training,
+                                kernel_initializer=last_conv_kernel_initializer,
+                                bias_initializer=last_conv_bias_initializer, normalize_weight=True)
 
-        self.fc = Linear(in_dim * r, 1)
+        self.fc = Linear(in_dim * r, 1, weight_initializer=done_weight_initializer,
+                         bias_initializer=done_bias_initializer)
 
         self.max_decoder_steps = max_decoder_steps
         self.min_decoder_steps = min_decoder_steps
         self.use_memory_mask = use_memory_mask
 
         self.is_incremental = is_incremental
+        self.training = training
+
+        self.attention_key_projection_weight_initializer = attention_key_projection_weight_initializer
+        self.attention_key_projection_bias_initializer = attention_key_projection_bias_initializer
+        self.attention_value_projection_weight_initializer = attention_value_projection_weight_initializer
+        self.attention_value_projection_bias_initializer = attention_value_projection_bias_initializer
+
+        self.attention_kernel_initializer = attention_kernel_initializer
+        self.attention_query_projection_weight_initializer = attention_query_projection_weight_initializer
+        self.attention_out_projection_weight_initializer = attention_out_projection_weight_initializer
 
     def build(self, input_shape):
         pass
@@ -397,9 +447,17 @@ class Decoder(tf.layers.Layer):
 
         x = self.preattention(x)
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, self.embed_dim)
+        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, self.embed_dim,
+                                                                 key_projection_weight_initializer=self.attention_key_projection_weight_initializer,
+                                                                 key_projection_bias_initializer=self.attention_key_projection_bias_initializer,
+                                                                 value_projection_weight_initializer=self.attention_value_projection_weight_initializer,
+                                                                 value_projection_bias_initializer=self.attention_value_projection_bias_initializer)
         mp_attention = MultiHopAttention(attention_mechanism, self.preattention.output_size,
-                                         self.mh_attentions, self.r, self.is_incremental)
+                                         self.mh_attentions, self.r, self.is_incremental,
+                                         kernel_initializer=self.attention_kernel_initializer,
+                                         query_projection_weight_initializer=self.attention_query_projection_weight_initializer,
+                                         out_projection_weight_initializer=self.attention_out_projection_weight_initializer,
+                                         training=self.training)
 
         x, alignments = mp_attention(CNNAttentionWrapperInput(x, frame_pos_embed),
                                      mp_attention.zero_state(inputs.shape[0].value, inputs.dtype))
@@ -423,26 +481,35 @@ class Decoder(tf.layers.Layer):
         text_pos_embed = self.embed_key_positions(text_positions, w)
         keys = keys + text_pos_embed
 
-        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, self.embed_dim)
+        attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, self.embed_dim,
+                                                                 key_projection_weight_initializer=self.attention_key_projection_weight_initializer,
+                                                                 key_projection_bias_initializer=self.attention_key_projection_bias_initializer,
+                                                                 value_projection_weight_initializer=self.attention_value_projection_weight_initializer,
+                                                                 value_projection_bias_initializer=self.attention_value_projection_bias_initializer)
         attention = MultiHopAttention(attention_mechanism, self.preattention.output_size,
-                                      self.mh_attentions, self.r, self.is_incremental)
+                                      self.mh_attentions, self.r, self.is_incremental,
+                                      kernel_initializer=self.attention_kernel_initializer,
+                                      query_projection_weight_initializer=self.attention_query_projection_weight_initializer,
+                                      out_projection_weight_initializer=self.attention_out_projection_weight_initializer,
+                                      training=self.training)
 
         test_input_length = 0 if test_inputs is None else test_inputs.shape[1].value
         # append one element to avoid index overflow
-        test_inputs = test_inputs if test_inputs is None else self.append_unused_final_test_input(test_inputs, batch_size)
+        test_inputs = test_inputs if test_inputs is None else self.append_unused_final_test_input(test_inputs,
+                                                                                                  batch_size)
 
         def condition(time, unused_input, unused_attention_state, unused_frame_pos, unused_last_conv_state,
                       unused_outputs, done):
             termination_criteria = tf.greater(done, 0.5)
             minimum_requirement = tf.greater(time, self.min_decoder_steps)
-            maximum_criteria = tf.less(time, self.max_decoder_steps)
+            maximum_criteria = tf.greater_equal(time, self.max_decoder_steps)
             termination = tf.logical_or(tf.logical_and(termination_criteria, minimum_requirement), maximum_criteria)
             # tf.while_loop continues body until cond returns False
             result = tf.logical_not(termination)
             return tf.squeeze(tf.reduce_all(result, axis=0))
 
         def test_condition(time, unused_input, unused_attention_state, unused_frame_pos, unused_last_conv_state,
-                      unused_outputs, done):
+                           unused_outputs, done):
             return tf.less(time, test_input_length)
 
         def body(time, input, attention_state, frame_pos, last_conv_state, outputs, done):
@@ -459,7 +526,7 @@ class Decoder(tf.layers.Layer):
             done = tf.squeeze(tf.sigmoid(self.fc(x)), axis=[1, 2])
             outputs = outputs.write(time, output)
             next_time = time + 1
-            next_frame_pos = tf.fill(dims=(batch_size, 1), value=next_time)
+            next_frame_pos = frame_pos + 1
             output = output if test_inputs is None else tf.expand_dims(test_inputs[:, next_time, :], axis=1)
             return (
                 next_time, output, next_attention_states, next_frame_pos, next_last_conv_state,
@@ -471,7 +538,8 @@ class Decoder(tf.layers.Layer):
                                     element_shape=tf.TensorShape([batch_size, 1, self.in_dim * self.r]))
         initial_done = tf.constant(shape=[batch_size], value=0, dtype=tf.float32)
         condition_function = condition if test_inputs is None else test_condition
-        initial_input = self.initial_input(batch_size) if test_inputs is None else tf.expand_dims(test_inputs[:, 0, :], axis=1)
+        initial_input = self.initial_input(batch_size) if test_inputs is None else tf.expand_dims(test_inputs[:, 0, :],
+                                                                                                  axis=1)
         _, _, final_attention_state, _, _, out_online_ta, _ = tf.while_loop(condition_function, body, (
             time, initial_input, attention.zero_state(batch_size, tf.float32),
             self.initial_frame_pos(batch_size), self.last_conv.zero_state(batch_size, tf.float32), outputs_ta,
