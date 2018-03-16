@@ -102,3 +102,7 @@ ENV/
 
 # PyCharm
 .idea
+
+# data
+jsut/
+jsut-out/

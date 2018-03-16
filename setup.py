@@ -10,12 +10,18 @@ setup(name='deepvoice3_tensorflow',
       packages=find_packages(),
       install_requires=[
           "numpy",
+          "librosa",
+          "lws <= 1.0",
+          "tqdm",
       ],
       extras_require={
           "test": [
               "hypothesis",
               "hypothesis[numpy]"
               "pylint",
-          ]
+          ],
+          "train": [
+              "nnmnkwii",
+          ],
       }
-     )
+      )
