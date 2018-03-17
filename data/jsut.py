@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from nnmnkwii.datasets import jsut
 from nnmnkwii.io import hts
 from hparams import hparams
+import tensorflow as tf
 
 
 # https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
@@ -107,6 +108,9 @@ class JSUT():
         result = [future.result() for future in tqdm(futures)]
         executor.shutdown()
         return result
+
+    def data_set(self):
+        return tf.data.Dataset.list_files(self.out_dir)
 
     @property
     def in_dir(self):
