@@ -9,7 +9,8 @@ import math
 class Linear(tf.layers.Layer):
     """Weight-normalized Linear layer (input: B x T x C)"""
 
-    def __init__(self, in_features, out_features, dropout=1, weight_initializer=None, bias_initializer=None, trainable=True,
+    def __init__(self, in_features, out_features, dropout=1, weight_initializer=None, bias_initializer=None,
+                 trainable=True,
                  name=None, **kwargs):
         super(Linear, self).__init__(name=name, trainable=trainable, **kwargs)
         self.in_features = in_features
@@ -35,6 +36,28 @@ class Linear(tf.layers.Layer):
             return tf.matmul(inputs, self.normalized_weight) + self.bias
         else:
             return tf.einsum("btc,ce->bte", inputs, self.normalized_weight)
+
+
+class Embedding(tf.layers.Layer):
+
+    def __init__(self, num_embeddings, embedding_dim, stddev=0.01, weight_initializer=None,
+                 trainable=True, name=None):
+        super(Embedding, self).__init__(name=name, trainable=trainable)
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.weight_initializer = weight_initializer if weight_initializer is not None else tf.truncated_normal_initializer(
+            mean=0,
+            stddev=stddev)
+
+    def build(self, _):
+        weight = self.add_variable("weight", shape=(self.num_embeddings, self.embedding_dim),
+                                   initializer=self.weight_initializer,
+                                   trainable=False)
+        self.normalized_weight = weight_normalization(weight)
+        self.built = True
+
+    def call(self, inputs, **kwargs):
+        return tf.nn.embedding_lookup(self.normalized_weight, inputs)
 
 
 class SinusoidalEncodingEmbedding(tf.layers.Layer):
