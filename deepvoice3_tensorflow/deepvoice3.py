@@ -1,11 +1,40 @@
 import tensorflow as tf
 import math
 from collections import namedtuple
-from .modules import Linear, Conv1d, Conv1dGLU, SinusoidalEncodingEmbedding
+from .modules import Linear, Embedding, Conv1d, Conv1dGLU, SinusoidalEncodingEmbedding
 from .cnn_cell import CNNCell, MultiCNNCell
 from tensorflow.contrib.seq2seq.python.ops.attention_wrapper import AttentionMechanism
 from tensorflow.python.util import nest
 
+
+class Encoder(tf.layers.Layer):
+    def __init__(self, n_vocab, embed_dim, embedding_weight_std=0.1,
+                 convolutions=((64, 5, .1),) * 7,
+                 dropout=0.9,
+                 training=False,
+                 trainable=True,
+                 name=None, **kwargs):
+        super(Encoder, self).__init__(name=name, trainable=trainable, **kwargs)
+        self.dropout = dropout
+        self.training = training
+        self.embed_tokens = Embedding(n_vocab, embed_dim, embedding_weight_std)
+        self.convolutions = MultiCNNCell(
+            [Conv1dGLU(out_channels, kernel_size, dilation) for (out_channels, kernel_size, dilation) in convolutions])
+
+    def build(self, _):
+        self.built = True
+
+    def call(self, text_sequences, text_positions=None):
+        x = self.embed_tokens(text_sequences)
+        x = tf.layers.dropout(x, rate=1.0 - self.dropout, training=self.training)
+
+        input_embedding = x
+        # use normal convolution instead of causal convolution
+        keys = self.convolutions(x)
+
+        # add output to input embedding for attention
+        values = (keys + input_embedding) + math.sqrt(0.5)
+        return keys, values
 
 class ScaledDotProductAttentionMechanism(AttentionMechanism):
     def __init__(self, keys, values, embed_dim, window_ahead=3, window_backward=1, dropout=1.0, use_key_projection=True,
