@@ -11,6 +11,7 @@ from nnmnkwii.datasets import jsut
 from nnmnkwii.io import hts
 from hparams import hparams
 import tensorflow as tf
+from data import DataInput
 
 
 # https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
@@ -121,20 +122,19 @@ class JSUT():
         print('Max input length:  %d' % max(len(m[3]) for m in metadata))
         print('Max output length: %d' % max(m[2] for m in metadata))
 
-    def train_input_fn(self, batch_size, feature_column_index=1):
-        '''
-        :param batch_size:
-        :param feature_column_index: 0: linear, 1: mel
-        :return:
-        '''
-        def process(line):
+    def dataset(self):
+        def load_specs(line):
             cols = line.decode("utf-8").split("|")
             text = cols[3]
-            path = os.path.join(self.out_dir, cols[feature_column_index])
-            return tf.data.Dataset.from_tensors((text, np.load(path)))
+            spec_path = os.path.join(self.out_dir, cols[0])
+            mel_path = os.path.join(self.out_dir, cols[1])
+            spec = np.load(spec_path)
+            mel = np.load(mel_path)
+            mel_length = len(mel)
+            return DataInput(text=text, spec=spec, mel=mel, target_length=mel_length)
 
-        dataset = tf.data.TextLineDataset(["train.txt"]).flat_map(lambda line: process(line))
-        return dataset.shuffle(1000).repeat().batch(batch_size)
+        dataset = tf.data.TFRecordDataset.TextLineDataset(["train.txt"]).map(lambda line: load_specs(line))
+        return dataset
 
     @property
     def in_dir(self):
