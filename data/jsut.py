@@ -1,4 +1,5 @@
 import os
+import collections
 from functools import partial
 from urllib.request import urlretrieve
 from tqdm import tqdm
@@ -10,8 +11,7 @@ from concurrent.futures import ProcessPoolExecutor
 from nnmnkwii.datasets import jsut
 from nnmnkwii.io import hts
 from hparams import hparams
-import tensorflow as tf
-from data import DataInput
+from data.tfrecord_utils import write_preprocessed_data
 
 
 # https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
@@ -35,6 +35,8 @@ class TqdmUpTo(tqdm):
             self.total = tsize
         self.update(b * bsize - self.n)  # will also set self.n = b * bsize
 
+class MetaData(collections.namedtuple("MetaData", ["filename", "n_frames", "text"])):
+    pass
 
 def _process_utterance(out_dir, index, wav_path, text):
     sr = hparams.sample_rate
@@ -64,13 +66,11 @@ def _process_utterance(out_dir, index, wav_path, text):
     mel_spectrogram = audio.melspectrogram(wav).astype(np.float32)
 
     # Write the spectrograms to disk:
-    spectrogram_filename = 'jsut-spec-%05d.npy' % index
-    mel_filename = 'jsut-mel-%05d.npy' % index
-    np.save(os.path.join(out_dir, spectrogram_filename), spectrogram.T, allow_pickle=False)
-    np.save(os.path.join(out_dir, mel_filename), mel_spectrogram.T, allow_pickle=False)
+    filename = 'jsut-target-%05d.tfrecords' % index
+    write_preprocessed_data(text, spectrogram.T, mel_spectrogram.T, os.path.join(out_dir, filename))
 
     # Return a tuple describing this training example:
-    return (spectrogram_filename, mel_filename, n_frames, text)
+    return MetaData(filename, n_frames, text)
 
 
 class JSUT():
@@ -115,27 +115,16 @@ class JSUT():
         with open(os.path.join(self.out_dir, 'train.txt'), 'w', encoding='utf-8') as f:
             for m in metadata:
                 f.write('|'.join([str(x) for x in m]) + '\n')
-        frames = sum([m[2] for m in metadata])
+        frames = sum([m.n_frames for m in metadata])
         frame_shift_ms = hparams.hop_size / hparams.sample_rate * 1000
         hours = frames * frame_shift_ms / (3600 * 1000)
         print('Wrote %d utterances, %d frames (%.2f hours)' % (len(metadata), frames, hours))
-        print('Max input length:  %d' % max(len(m[3]) for m in metadata))
-        print('Max output length: %d' % max(m[2] for m in metadata))
-
-    def dataset(self):
-        def load_specs(line):
-            cols = line.decode("utf-8").split("|")
-            text = cols[3]
-            spec_path = os.path.join(self.out_dir, cols[0])
-            mel_path = os.path.join(self.out_dir, cols[1])
-            spec = np.load(spec_path)
-            mel = np.load(mel_path)
-            mel_length = len(mel)
-            return DataInput(text=text, spec=spec, mel=mel, target_length=mel_length)
-
-        dataset = tf.data.TFRecordDataset.TextLineDataset(["train.txt"]).map(lambda line: load_specs(line))
-        return dataset
+        print('Max input length:  %d' % max(len(m.text) for m in metadata))
+        print('Max output length: %d' % max(m.n_frames for m in metadata))
 
     @property
     def in_dir(self):
         return self.file_path.strip(".zip")
+
+def instantiate(in_dir, out_dir):
+    return JSUT(in_dir, out_dir)

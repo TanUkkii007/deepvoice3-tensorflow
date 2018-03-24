@@ -21,6 +21,7 @@ setup(name='deepvoice3_tensorflow',
               "pylint",
           ],
           "train": [
+              "docopt",
               "nnmnkwii",
           ],
       }
