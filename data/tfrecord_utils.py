@@ -1,14 +1,17 @@
 import tensorflow as tf
 import numpy as np
-from data import PreprocessedData
+from collections.abc import Iterable
+from data import PreprocessedTargetData
 
 
 def bytes_feature(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+    assert isinstance(value, Iterable)
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
 
 
 def int64_feature(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+    assert isinstance(value, Iterable)
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
 
 def write_tfrecord(example: tf.train.Example, filename: str):
@@ -16,26 +19,39 @@ def write_tfrecord(example: tf.train.Example, filename: str):
         writer.write(example.SerializeToString())
 
 
-def write_preprocessed_data(text: str, spec: np.ndarray, mel: np.ndarray, filename: str):
+def write_preprocessed_target_data(id: int, spec: np.ndarray, mel: np.ndarray, filename: str):
     raw_spec = spec.tostring()
     raw_mel = mel.tostring()
     example = tf.train.Example(features=tf.train.Features(feature={
-        'text': bytes_feature(text.encode('utf-8')),
-        'spec': bytes_feature(raw_spec),
-        'spec_width': int64_feature(spec.shape[1]),
-        'mel': bytes_feature(raw_mel),
-        'mel_width': int64_feature(mel.shape[1]),
-        'target_length': int64_feature(len(mel)),
+        'id': int64_feature([id]),
+        'spec': bytes_feature([raw_spec]),
+        'spec_width': int64_feature([spec.shape[1]]),
+        'mel': bytes_feature([raw_mel]),
+        'mel_width': int64_feature([mel.shape[1]]),
+        'target_length': int64_feature([len(mel)]),
     }))
     write_tfrecord(example, filename)
 
 
-def read_preprocessed_data(filename):
+def write_preprocessed_source_data2(id: int, text1: str, source1: np.ndarray, text2: str, source2: np.ndarray,
+                                    filename: str):
+    raw_source1 = source1.tostring()
+    raw_source2 = source2.tostring()
+    example = tf.train.Example(features=tf.train.Features(feature={
+        'id': int64_feature([id]),
+        'text': bytes_feature([text1.encode('utf-8'), text2.encode('utf-8')]),
+        'source': bytes_feature([raw_source1, raw_source2]),
+        'source_length': int64_feature([len(source1), len(source2)]),
+    }))
+    write_tfrecord(example, filename)
+
+
+def read_preprocessed_target_data(filename):
     record_iterator = tf.python_io.tf_record_iterator(filename)
     for string_record in record_iterator:
         example = tf.train.Example()
         example.ParseFromString(string_record)
-        text = example.features.feature['text'].bytes_list.value[0].decode("utf-8")
+        id = example.features.feature['id'].int64_list.value[0]
         spec = example.features.feature['spec'].bytes_list.value[0]
         mel = example.features.feature['mel'].bytes_list.value[0]
         spec_width = example.features.feature['spec_width'].int64_list.value[0]
@@ -43,8 +59,8 @@ def read_preprocessed_data(filename):
         target_length = example.features.feature['target_length'].int64_list.value[0]
         spec = np.frombuffer(spec, dtype=np.float32).reshape([target_length, spec_width])
         mel = np.frombuffer(mel, dtype=np.float32).reshape([target_length, mel_width])
-        yield PreprocessedData(
-            text=text,
+        yield PreprocessedTargetData(
+            id=id,
             spec=spec,
             spec_width=spec_width,
             mel=mel,
@@ -53,9 +69,9 @@ def read_preprocessed_data(filename):
         )
 
 
-def parse_preprocessed_data(proto):
+def parse_preprocessed_target_data(proto):
     features = {
-        'text': tf.FixedLenFeature((), tf.string),
+        'id': tf.FixedLenFeature((), tf.int64),
         'spec': tf.FixedLenFeature((), tf.string),
         'spec_width': tf.FixedLenFeature((), tf.int64),
         'mel': tf.FixedLenFeature((), tf.string),
@@ -66,14 +82,14 @@ def parse_preprocessed_data(proto):
     return parsed_features
 
 
-def decode_preprocessed_data(parsed):
+def decode_preprocessed_target_data(parsed):
     spec_width = parsed['spec_width']
     mel_width = parsed['mel_width']
     target_length = parsed['target_length']
     spec = tf.decode_raw(parsed['spec'], tf.float32)
     mel = tf.decode_raw(parsed['mel'], tf.float32)
-    return PreprocessedData(
-        text=parsed['text'],
+    return PreprocessedTargetData(
+        text=parsed['id'],
         spec=tf.reshape(spec, shape=tf.stack([target_length, spec_width], axis=0)),
         spec_width=spec_width,
         mel=tf.reshape(mel, shape=tf.stack([target_length, mel_width], axis=0)),

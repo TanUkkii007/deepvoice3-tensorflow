@@ -1,5 +1,4 @@
 import os
-import collections
 from functools import partial
 from urllib.request import urlretrieve
 from tqdm import tqdm
@@ -11,34 +10,86 @@ from concurrent.futures import ProcessPoolExecutor
 from nnmnkwii.datasets import jsut
 from nnmnkwii.io import hts
 from hparams import hparams
-from data.tfrecord_utils import write_preprocessed_data
+from data.tfrecord_utils import write_preprocessed_target_data, write_preprocessed_source_data2
+from data import TqdmUpTo, TargetMetaData, SourceMetaData, SOURCE_AND_TARGET, SOURCE_ONLY, TARGET_ONLY
+from janome.tokenizer import Tokenizer
+import jaconv
+from typing import List
+
+n_vocab = 0xffff
+_eos = 1
+_tokenizer = Tokenizer()
 
 
-# https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
-class TqdmUpTo(tqdm):
-    """Alternative Class-based version of the above.
-    Provides `update_to(n)` which uses `tqdm.update(delta_n)`.
-    Inspired by [twine#242](https://github.com/pypa/twine/pull/242),
-    [here](https://github.com/pypa/twine/commit/42e55e06).
-    """
+def _yomi(result):
+    tokens = []
+    yomis = []
+    for token in result[:-1]:
+        tokens.append(token.surface)
+        yomi = None if token.phonetic == "*" else token.phonetic
+        yomis.append(yomi)
+    return tokens, yomis
 
-    def update_to(self, b=1, bsize=1, tsize=None):
-        """
-        b  : int, optional
-            Number of blocks transferred so far [default: 1].
-        bsize  : int, optional
-            Size of each block (in tqdm units) [default: 1].
-        tsize  : int, optional
-            Total size (in tqdm units). If [default: None] remains unchanged.
-        """
-        if tsize is not None:
-            self.total = tsize
-        self.update(b * bsize - self.n)  # will also set self.n = b * bsize
 
-class MetaData(collections.namedtuple("MetaData", ["filename", "n_frames", "text"])):
-    pass
+def _mix_pronunciation(tokens, yomis):
+    return "".join(
+        yomis[idx] if yomis[idx] is not None else tokens[idx]
+        for idx in range(len(tokens))
+    )
 
-def _process_utterance(out_dir, index, wav_path, text):
+
+def mix_pronunciation(text):
+    tokens, yomis = _yomi(_tokenizer.tokenize(text))
+    return _mix_pronunciation(tokens, yomis)
+
+
+def add_punctuation(text):
+    last = text[-1]
+    if last not in [".", ",", "、", "。", "！", "？", "!", "?"]:
+        text = text + "。"
+    return text
+
+
+def normalize_delimiter(text):
+    text = text.replace(",", "、")
+    text = text.replace(".", "。")
+    text = text.replace("，", "、")
+    text = text.replace("．", "。")
+    return text
+
+
+def text_to_sequence(text, mix=False):
+    for c in [" ", "　", "「", "」", "『", "』", "・", "【", "】",
+              "（", "）", "(", ")"]:
+        text = text.replace(c, "")
+    text = text.replace("!", "！")
+    text = text.replace("?", "？")
+
+    text = normalize_delimiter(text)
+    text = jaconv.normalize(text)
+    if mix:
+        text = mix_pronunciation(text)
+    text = jaconv.hira2kata(text)
+    text = add_punctuation(text)
+
+    return [ord(c) for c in text] + [_eos], text
+
+
+def sequence_to_text(seq):
+    return "".join(chr(n) for n in seq)
+
+
+def _process_text(out_dir, index, text):
+    sequence, text1 = text_to_sequence(text, mix=False)
+    sequence = np.array(sequence)
+    sequence_mixed, text2 = text_to_sequence(text, mix=True)
+    sequence_mixed = np.array(sequence_mixed)
+    filename = 'jsut-source-%05d.tfrecords' % index
+    write_preprocessed_source_data2(index, text1, sequence, text2, sequence_mixed, os.path.join(out_dir, filename))
+    return SourceMetaData(index, filename, text1, len(text1), len(sequence), text2, len(text2), len(sequence_mixed))
+
+
+def _process_audio(out_dir, index, wav_path):
     sr = hparams.sample_rate
     # Load the audio to a numpy array:
     wav = audio.load_wav(wav_path)
@@ -67,10 +118,10 @@ def _process_utterance(out_dir, index, wav_path, text):
 
     # Write the spectrograms to disk:
     filename = 'jsut-target-%05d.tfrecords' % index
-    write_preprocessed_data(text, spectrogram.T, mel_spectrogram.T, os.path.join(out_dir, filename))
+    write_preprocessed_target_data(index, spectrogram.T, mel_spectrogram.T, os.path.join(out_dir, filename))
 
     # Return a tuple describing this training example:
-    return MetaData(filename, n_frames, text)
+    return TargetMetaData(index, filename, n_frames)
 
 
 class JSUT():
@@ -95,36 +146,53 @@ class JSUT():
                 for zipinfo in members:
                     zip_ref.extract(zipinfo, self.dl_dir)
 
-    def preprocess(self, num_workers=4):
+    def preprocess(self, num_workers=4, mode=SOURCE_AND_TARGET):
         if not os.path.exists(self.out_dir):
             os.makedirs(self.out_dir)
         executor = ProcessPoolExecutor(max_workers=num_workers)
-        futures = []
-        transcriptions = jsut.TranscriptionDataSource(
-            self.in_dir, subsets=jsut.available_subsets).collect_files()
-        wav_paths = jsut.WavFileDataSource(
-            self.in_dir, subsets=jsut.available_subsets).collect_files()
+        if mode in [TARGET_ONLY, SOURCE_AND_TARGET]:
+            futures = []
+            wav_paths = jsut.WavFileDataSource(
+                self.in_dir, subsets=jsut.available_subsets).collect_files()
 
-        for index, (text, wav_path) in enumerate(zip(transcriptions, wav_paths)):
-            futures.append(executor.submit(partial(_process_utterance, self.out_dir, index + 1, wav_path, text)))
-        result = [future.result() for future in tqdm(futures)]
+            for index, wav_path in enumerate(wav_paths):
+                futures.append(executor.submit(partial(_process_audio, self.out_dir, index + 1, wav_path)))
+            result = [future.result() for future in tqdm(futures, desc="targets")]
+            self._write_target_metadata(result)
+        if mode in [SOURCE_ONLY, SOURCE_AND_TARGET]:
+            futures = []
+            transcriptions = jsut.TranscriptionDataSource(
+                self.in_dir, subsets=jsut.available_subsets).collect_files()
+            for index, text in enumerate(transcriptions):
+                futures.append(executor.submit(partial(_process_text, self.out_dir, index + 1, text)))
+            result = [future.result() for future in tqdm(futures, desc="sources")]
+            self._write_source_metadata(result)
         executor.shutdown()
-        self._write_metadata(result)
 
-    def _write_metadata(self, metadata):
-        with open(os.path.join(self.out_dir, 'train.txt'), 'w', encoding='utf-8') as f:
+    def _write_target_metadata(self, metadata: List[TargetMetaData]):
+        with open(os.path.join(self.out_dir, 'train-target.txt'), 'w', encoding='utf-8') as f:
             for m in metadata:
                 f.write('|'.join([str(x) for x in m]) + '\n')
         frames = sum([m.n_frames for m in metadata])
         frame_shift_ms = hparams.hop_size / hparams.sample_rate * 1000
         hours = frames * frame_shift_ms / (3600 * 1000)
         print('Wrote %d utterances, %d frames (%.2f hours)' % (len(metadata), frames, hours))
-        print('Max input length:  %d' % max(len(m.text) for m in metadata))
         print('Max output length: %d' % max(m.n_frames for m in metadata))
+
+
+    def _write_source_metadata(self, metadata: List[SourceMetaData]):
+        with open(os.path.join(self.out_dir, 'train-source.txt'), 'w', encoding='utf-8') as f:
+            for m in metadata:
+                f.write('|'.join([str(x) for x in m]) + '\n')
+        print('Max input text length:  %d' % max(m.text_length for m in metadata))
+        print('Max input array length:  %d' % max(m.source_length for m in metadata))
+        print('Max alternative input text length:  %d' % max(m.text2_length for m in metadata))
+        print('Max alternative input array length:  %d' % max(m.source2_length for m in metadata))
 
     @property
     def in_dir(self):
         return self.file_path.strip(".zip")
+
 
 def instantiate(in_dir, out_dir):
     return JSUT(in_dir, out_dir)

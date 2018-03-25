@@ -24,5 +24,9 @@ setup(name='deepvoice3_tensorflow',
               "docopt",
               "nnmnkwii",
           ],
+          "jp": [
+              "jaconv",
+              "janome",
+          ],
       }
       )
