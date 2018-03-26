@@ -81,9 +81,9 @@ def sequence_to_text(seq):
 
 def _process_text(out_dir, index, text):
     sequence, text1 = text_to_sequence(text, mix=False)
-    sequence = np.array(sequence)
+    sequence = np.array(sequence, dtype=np.int64)
     sequence_mixed, text2 = text_to_sequence(text, mix=True)
-    sequence_mixed = np.array(sequence_mixed)
+    sequence_mixed = np.array(sequence_mixed, dtype=np.int64)
     filename = 'jsut-source-%05d.tfrecords' % index
     write_preprocessed_source_data2(index, text1, sequence, text2, sequence_mixed, os.path.join(out_dir, filename))
     return SourceMetaData(index, filename, text1, len(text1), len(sequence), text2, len(text2), len(sequence_mixed))

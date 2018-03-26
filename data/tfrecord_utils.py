@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from collections.abc import Iterable
-from data import PreprocessedTargetData
+from data import PreprocessedTargetData, PreprocessedSourceData
 
 
 def bytes_feature(value):
@@ -89,10 +89,35 @@ def decode_preprocessed_target_data(parsed):
     spec = tf.decode_raw(parsed['spec'], tf.float32)
     mel = tf.decode_raw(parsed['mel'], tf.float32)
     return PreprocessedTargetData(
-        text=parsed['id'],
+        id=parsed['id'],
         spec=tf.reshape(spec, shape=tf.stack([target_length, spec_width], axis=0)),
         spec_width=spec_width,
         mel=tf.reshape(mel, shape=tf.stack([target_length, mel_width], axis=0)),
         mel_width=mel_width,
         target_length=target_length,
+    )
+
+
+def parse_preprocessed_source_data(proto):
+    features = {
+        'id': tf.FixedLenFeature((), tf.int64),
+        'text': tf.FixedLenFeature((2), tf.string),
+        'source': tf.FixedLenFeature((2), tf.string),
+        'source_length': tf.FixedLenFeature((2), tf.int64),
+    }
+    parsed_features = tf.parse_single_example(proto, features)
+    return parsed_features
+
+
+def decode_preprocessed_source_data(parsed):
+    source = tf.decode_raw(parsed['source'][0], tf.int64)
+    source2 = tf.decode_raw(parsed['source'][1], tf.int64)
+    return PreprocessedSourceData(
+        id=parsed['id'],
+        text=parsed['text'][0],
+        source=source,
+        source_length=parsed['source_length'][0],
+        text2=parsed['text'][1],
+        source2=source2,
+        source_length2=parsed['source_length'][1],
     )
