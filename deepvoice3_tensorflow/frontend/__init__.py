@@ -63,68 +63,96 @@ class Frontend():
             target_length = target.target_length + b_pad
 
             # done flag
-            done = tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32)
+            done = tf.concat([tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32), tf.ones(1, dtype=tf.float32)], axis=0)
             return _PreparedTargetData(target.id, spec, target.spec_width, mel, target.mel_width, target_length, done)
 
         return self._decode_target().map(lambda inputs: convert(inputs))
 
-    @staticmethod
-    def zip_source_and_target(source: tf.data.Dataset, target: tf.data.Dataset):
+    def prepare(self):
+        return _FrontendPreparedView(self.prepare_source(), self.prepare_target(), self.hparams)
+
+
+class _FrontendPreparedView():
+    def __init__(self, source: tf.data.Dataset, target: tf.data.Dataset, hparams):
+        self.source = source
+        self.target = target
+        self.hparams = hparams
+
+    def zip_source_and_target(self):
         def assert_id(source, target):
             with tf.control_dependencies([tf.assert_equal(source.id, target.id)]):
                 return (source, target)
 
-        return tf.data.Dataset.zip((source, target)).map(lambda x, y: assert_id(x, y))
+        zipped = tf.data.Dataset.zip((self.source, self.target)).map(lambda x, y: assert_id(x, y))
+        return _FrontendZippedView(zipped, self.hparams)
 
-    @staticmethod
-    def batch_dataset(dataset: tf.data.Dataset, batch_size):
+
+class _FrontendZippedView():
+    def __init__(self, zipped: tf.data.Dataset, hparams):
+        self.dataset = zipped
+        self.hparams = hparams
+
+    def group_by_batch(self):
+        batch_size = self.hparams.batch_size
+        approx_min_target_length = self.hparams.approx_min_target_length
+        bucket_width = self.hparams.batch_bucket_width
+        num_buckets = self.hparams.batch_num_buckets
+
         def key_func(source, target):
-            bucket_width = 10
-            num_buckets = 100
-            bucket_id = target.target_length // bucket_width
-            return tf.to_int64(tf.minimum(num_buckets, bucket_id))
+            target_length = tf.minimum(target.target_length - approx_min_target_length, 0)
+            bucket_id = target_length // bucket_width
+            return tf.minimum(tf.to_int64(num_buckets), bucket_id)
 
-        def reduce_func(window: tf.data.Dataset):
+        def reduce_func(unused_key, window: tf.data.Dataset):
             return window.padded_batch(batch_size, padded_shapes=(
                 PreparedSourceData(
                     id=tf.TensorShape([]),
+                    text=tf.TensorShape([]),
                     source=tf.TensorShape([None]),
                     source_length=tf.TensorShape([]),
                     text_positions=tf.TensorShape([None]),
+                    text2=tf.TensorShape([]),
                     source2=tf.TensorShape([None]),
                     source_length2=tf.TensorShape([]),
                     text_positions2=tf.TensorShape([None]),
                 ),
                 _PreparedTargetData(
                     id=tf.TensorShape([]),
-                    spec=tf.TensorShape([None]),
+                    spec=tf.TensorShape([None, None]),
                     spec_width=tf.TensorShape([]),
-                    mel=tf.TensorShape([None]),
+                    mel=tf.TensorShape([None, None]),
                     mel_width=tf.TensorShape([]),
                     target_length=tf.TensorShape([]),
                     done=tf.TensorShape([None]),
                 )), padding_values=(
                 PreparedSourceData(
-                    id=0,
-                    source=0,
-                    source_length=0,
-                    text_positions=0,
-                    source2=0,
-                    source_length2=0,
-                    text_positions2=0,
+                    id=tf.to_int64(0),
+                    text="",
+                    source=tf.to_int64(0),
+                    source_length=tf.to_int64(0),
+                    text_positions=tf.to_int64(0),
+                    text2="",
+                    source2=tf.to_int64(0),
+                    source_length2=tf.to_int64(0),
+                    text_positions2=tf.to_int64(0),
                 ),
                 _PreparedTargetData(
-                    id=0,
-                    spec=0,
-                    spec_width=0,
-                    mel=0,
-                    mel_width=0,
-                    target_length=0,
-                    done=1,
+                    id=tf.to_int64(0),
+                    spec=tf.to_float(0),
+                    spec_width=tf.to_int64(0),
+                    mel=tf.to_float(0),
+                    mel_width=tf.to_int64(0),
+                    target_length=tf.to_int64(0),
+                    done=tf.to_float(1),
                 )))
 
-        return dataset.apply(tf.contrib.data.group_by_window(key_func,
-                                                             reduce_func,
-                                                             window_size=batch_size))
+        batched = self.dataset.apply(tf.contrib.data.group_by_window(key_func,
+                                                                     reduce_func,
+                                                                     window_size=batch_size))
+        return _FrontendBatchedView(batched, self.hparams)
 
 
+class _FrontendBatchedView():
+    def __init__(self, batched: tf.data.Dataset, hparams):
+        self.dataset = batched
+        self.hparams = hparams

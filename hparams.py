@@ -18,4 +18,11 @@ hparams = tf.contrib.training.HParams(
     rescaling=False,
     rescaling_max=0.999,
     allow_clipping_in_normalization=False,
+
+    # Training
+    batch_size=16,
+    approx_min_target_length = 200,
+    batch_bucket_width = 20,
+    batch_num_buckets = 20,
     )
+
