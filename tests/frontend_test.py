@@ -62,7 +62,7 @@ class FrontendTest(tf.test.TestCase):
 
         frontend = Frontend(source, target, hparams)
 
-        batched = frontend.prepare().zip_source_and_target().group_by_batch().dataset
+        batched = frontend.prepare().zip_source_and_target().group_by_batch().add_frame_positions().dataset
 
         with self.test_session() as sess:
             iterator = batched.make_one_shot_iterator()
@@ -114,8 +114,12 @@ class FrontendTest(tf.test.TestCase):
                 self.assertAllEqual(np.zeros(target_length2 // r // hparams.downsample_step - 1),
                                     t.done[1][:target_length2 // r // hparams.downsample_step - 1])
                 self.assertAllEqual(np.ones((max_target_length // r // hparams.downsample_step) - (
-                            target_length1 // r // hparams.downsample_step - 1)),
+                        target_length1 // r // hparams.downsample_step - 1)),
                                     t.done[0][target_length1 // r // hparams.downsample_step - 1:])
                 self.assertAllEqual(np.ones((max_target_length // r // hparams.downsample_step) - (
                         target_length2 // r // hparams.downsample_step - 1)),
                                     t.done[1][target_length2 // r // hparams.downsample_step - 1:])
+
+                # frame_positions
+                self.assertAllEqual(np.arange(1, max_target_length // r // hparams.downsample_step + 1),
+                                    t.frame_positions)

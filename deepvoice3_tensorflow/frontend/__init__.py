@@ -156,3 +156,30 @@ class _FrontendBatchedView():
     def __init__(self, batched: tf.data.Dataset, hparams):
         self.dataset = batched
         self.hparams = hparams
+
+    def add_frame_positions(self):
+        r = self.hparams.outputs_per_step
+        downsample_step = self.hparams.downsample_step
+
+        def convert(source, target):
+            max_decoder_target_len = tf.shape(target.mel)[1] // r // downsample_step
+            frame_positions = tf.range(1, max_decoder_target_len + 1)
+            return source, PreparedTargetData(
+                id=target.id,
+                spec=target.spec,
+                spec_width=target.spec_width,
+                mel=target.mel,
+                mel_width=target.mel_width,
+                target_length=target.target_length,
+                done=target.done,
+                frame_positions=frame_positions,
+            )
+
+        converted = self.dataset.map(lambda x, y: convert(x, y))
+        return _FrontendBatchedViewWithFramePositions(converted, self.hparams)
+
+
+class _FrontendBatchedViewWithFramePositions():
+    def __init__(self, batched: tf.data.Dataset, hparams):
+        self.dataset = batched
+        self.hparams = hparams
