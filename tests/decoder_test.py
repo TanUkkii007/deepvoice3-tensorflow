@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume, HealthCheck
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs
+from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPrenetFCArgs
 import tensorflow.contrib.eager as tfe
 
 tfe.enable_eager_execution()
@@ -31,7 +31,7 @@ def memory_tensor(draw, batch_size, input_length=integers(5, 20),
 def mha_arg(draw, out_channels, kernel_size=integers(2, 10), dilation=integers(1, 20)):
     ks = draw(kernel_size)
     dl = draw(dilation)
-    return MultiHopAttentionArgs(out_channels, ks, dl, dropout=1.0)
+    return MultiHopAttentionArgs(out_channels, ks, dl, dropout=0.0)
 
 
 @composite
@@ -66,7 +66,7 @@ class DecoderTest(tf.test.TestCase):
         print("memory", memory)
 
         preattention_in_features = r * in_dim
-        preattention_args = ((preattention_in_features, mha_arg.out_channels, 1.0),) * num_preattention
+        preattention_args = (DecoderPrenetFCArgs(preattention_in_features, mha_arg.out_channels, dropout=0.0),) * num_preattention
 
         def one_tenth_initializer(length):
             half = length // 2
@@ -84,7 +84,7 @@ class DecoderTest(tf.test.TestCase):
 
         decoder = Decoder(embed_dim, in_dim, r, max_positions, preattention=preattention_args,
                           mh_attentions=(mha_arg,) * num_mha,
-                          dropout=1.0, is_incremental=False,
+                          dropout=0.0, is_incremental=False,
                           prenet_weight_initializer=prenet_weight_initializer,
                           attention_key_projection_weight_initializer=attention_key_projection_weight_initializer,
                           attention_value_projection_weight_initializer=attention_value_projection_weight_initializer,
@@ -97,7 +97,7 @@ class DecoderTest(tf.test.TestCase):
 
         decoder_online = Decoder(embed_dim, in_dim, r, max_positions, preattention=preattention_args,
                                  mh_attentions=(mha_arg,) * num_mha,
-                                 dropout=1.0, max_decoder_steps=T_query, min_decoder_steps=T_query, is_incremental=True,
+                                 dropout=0.0, max_decoder_steps=T_query, min_decoder_steps=T_query, is_incremental=True,
                                  prenet_weight_initializer=prenet_weight_initializer,
                                  attention_key_projection_weight_initializer=attention_key_projection_weight_initializer,
                                  attention_value_projection_weight_initializer=attention_value_projection_weight_initializer,
@@ -146,10 +146,10 @@ class DecoderTest(tf.test.TestCase):
         print("query", query)
         print("memory", memory)
         preattention_in_features = r * in_dim
-        preattention_args = ((preattention_in_features, mha_arg.out_channels, 1.0),) * num_preattention
+        preattention_args = (DecoderPrenetFCArgs(preattention_in_features, mha_arg.out_channels, dropout=0.0),) * num_preattention
         decoder_online = Decoder(embed_dim, in_dim, r, max_positions, preattention=preattention_args,
                                  mh_attentions=(mha_arg,) * num_mha,
-                                 dropout=1.0, max_decoder_steps=T_query, min_decoder_steps=T_query, is_incremental=True)
+                                 dropout=0.0, max_decoder_steps=T_query, min_decoder_steps=T_query, is_incremental=True)
 
         # frame pos start with 1
         frame_positions = tf.zeros(shape=(batch_size, T_query), dtype=tf.int32) + tf.range(1, T_query + 1, dtype=tf.int32)

@@ -27,7 +27,7 @@ def attention_tensors(draw, b_size=integers(1, 5), t_query_size=integers(2, 20),
 
 class AttentionLayerTest(tf.test.TestCase):
 
-    @given(tensors=attention_tensors(), dropout=floats(0.5, 1.0, allow_nan=False))
+    @given(tensors=attention_tensors(), dropout=floats(0.0, 0.5, allow_nan=False))
     @settings(max_examples=10, timeout=unlimited)
     def test_attention(self, tensors, dropout):
         B, T_query, C, T_encoder, embed_dim, query, encoder_out = tensors
@@ -53,7 +53,7 @@ class AttentionLayerTest(tf.test.TestCase):
         assume(C % 2 == 0)
         assume(B * T_query * C > 1)
         assume(B * T_encoder * embed_dim > 1)
-        dropout = 1.0
+        dropout = 0.0
         out_channels = C
         query = tf.constant(query)
         keys, values = tf.constant(encoder_out), tf.constant(encoder_out)
@@ -134,7 +134,7 @@ class AttentionLayerTest(tf.test.TestCase):
         assume(C % 2 == 0)
         assume(B * T_query * C > 1)
         assume(B * T_encoder * embed_dim > 1)
-        dropout = 1.0
+        dropout = 0.0
         out_channels = C
         query = tf.constant(query)
         keys, values = tf.constant(encoder_out), tf.constant(encoder_out)

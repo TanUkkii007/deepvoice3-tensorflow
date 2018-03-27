@@ -10,7 +10,7 @@ from tensorflow.python.util import nest
 class Encoder(tf.layers.Layer):
     def __init__(self, n_vocab, embed_dim, embedding_weight_std=0.1,
                  convolutions=((64, 5, .1),) * 7,
-                 dropout=0.9,
+                 dropout=0.1,
                  training=False,
                  trainable=True,
                  name=None, **kwargs):
@@ -26,7 +26,7 @@ class Encoder(tf.layers.Layer):
 
     def call(self, text_sequences, text_positions=None):
         x = self.embed_tokens(text_sequences)
-        x = tf.layers.dropout(x, rate=1.0 - self.dropout, training=self.training)
+        x = tf.layers.dropout(x, rate=self.dropout, training=self.training)
 
         input_embedding = x
         # use normal convolution instead of causal convolution
@@ -37,10 +37,10 @@ class Encoder(tf.layers.Layer):
         return keys, values
 
 class ScaledDotProductAttentionMechanism(AttentionMechanism):
-    def __init__(self, keys, values, embed_dim, window_ahead=3, window_backward=1, dropout=1.0, use_key_projection=True,
+    def __init__(self, keys, values, embed_dim, window_ahead=3, window_backward=1, dropout=0.1, use_key_projection=True,
                  use_value_projection=True, key_projection_weight_initializer=None,
                  key_projection_bias_initializer=None, value_projection_weight_initializer=None,
-                 value_projection_bias_initializer=None):
+                 value_projection_bias_initializer=None, training=False):
         '''
         :param memory: (B, src_len, embed_dim)
         :param embed_dim:
@@ -70,6 +70,7 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         self.dropout = dropout
 
         self._embed_dim = embed_dim
+        self.training = training
 
     @property
     def values(self):
@@ -114,7 +115,7 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         x = tf.reshape(x, shape=shape)
         alignment_scores = x
 
-        x = tf.nn.dropout(x, self.dropout)
+        x = tf.layers.dropout(x, rate=self.dropout, training=self.training)
 
         x = tf.matmul(x, self.values)
 
@@ -324,7 +325,7 @@ class MultiHopAttention(CNNCell):
         return sum([state.alignments for state in states]) / len(states)
 
 
-def DecoderPreNetCNN(params, dropout=0.9, is_incremental=False):
+def DecoderPreNetCNN(params, dropout=0.1, is_incremental=False):
     # ToDo: support in_channels != out_channels
     layer = MultiCNNCell([
         Conv1dGLU(in_channels, out_channels, kernel_size,
@@ -347,7 +348,7 @@ class DecoderPrenetFC(tf.layers.Layer):
         self.layers = [
             [Linear(in_features, out_features, dropout=dropout, weight_initializer=weight_initializer,
                     bias_initializer=bias_initializer),
-             tf.layers.Dropout(rate=1. - dropout)] for
+             tf.layers.Dropout(rate=dropout)] for
             in_features, out_features, dropout in params]
         self._output_size = params[-1][1]
         self.training = training
@@ -368,8 +369,8 @@ class DecoderPrenetFC(tf.layers.Layer):
 
 class Decoder(tf.layers.Layer):
     def __init__(self, embed_dim, in_dim=80, r=5, max_positions=512,
-                 preattention=(DecoderPrenetFCArgs(128, 5, 0.9),) * 4,
-                 mh_attentions=(MultiHopAttentionArgs(128, 5, 1, 0.9),) * 4, dropout=0.9,
+                 preattention=(DecoderPrenetFCArgs(128, 5, 0.1),) * 4,
+                 mh_attentions=(MultiHopAttentionArgs(128, 5, 1, 0.1),) * 4, dropout=0.1,
                  use_memory_mask=False,
                  query_position_rate=1.0,
                  key_position_rate=1.29,
@@ -472,7 +473,7 @@ class Decoder(tf.layers.Layer):
             # frame_pos_embed = None
 
         x = inputs
-        x = tf.layers.dropout(x, rate=1.0 - self.dropout, training=self.training)
+        x = tf.layers.dropout(x, rate=self.dropout, training=self.training)
 
         x = self.preattention(x)
 
@@ -480,7 +481,8 @@ class Decoder(tf.layers.Layer):
                                                                  key_projection_weight_initializer=self.attention_key_projection_weight_initializer,
                                                                  key_projection_bias_initializer=self.attention_key_projection_bias_initializer,
                                                                  value_projection_weight_initializer=self.attention_value_projection_weight_initializer,
-                                                                 value_projection_bias_initializer=self.attention_value_projection_bias_initializer)
+                                                                 value_projection_bias_initializer=self.attention_value_projection_bias_initializer,
+                                                                 training=self.training)
         mp_attention = MultiHopAttention(attention_mechanism, self.preattention.output_size,
                                          self.mh_attentions, self.r, self.is_incremental,
                                          kernel_initializer=self.attention_kernel_initializer,
@@ -514,7 +516,8 @@ class Decoder(tf.layers.Layer):
                                                                  key_projection_weight_initializer=self.attention_key_projection_weight_initializer,
                                                                  key_projection_bias_initializer=self.attention_key_projection_bias_initializer,
                                                                  value_projection_weight_initializer=self.attention_value_projection_weight_initializer,
-                                                                 value_projection_bias_initializer=self.attention_value_projection_bias_initializer)
+                                                                 value_projection_bias_initializer=self.attention_value_projection_bias_initializer,
+                                                                 training=self.training)
         attention = MultiHopAttention(attention_mechanism, self.preattention.output_size,
                                       self.mh_attentions, self.r, self.is_incremental,
                                       kernel_initializer=self.attention_kernel_initializer,
@@ -544,7 +547,7 @@ class Decoder(tf.layers.Layer):
         def body(time, input, attention_state, frame_pos, last_conv_state, outputs, done):
             w = self.query_position_rate
             frame_pos_embed = self.embed_query_positions(frame_pos, w)
-            x = tf.layers.dropout(input, rate=1.0 - self.dropout, training=self.training)
+            x = tf.layers.dropout(input, rate=self.dropout, training=self.training)
             x = self.preattention(x)
             (x, _), next_attention_states = attention.apply(CNNAttentionWrapperInput(x, frame_pos_embed),
                                                             attention_state)

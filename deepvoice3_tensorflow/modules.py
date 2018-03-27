@@ -9,13 +9,13 @@ import math
 class Linear(tf.layers.Layer):
     """Weight-normalized Linear layer (input: B x T x C)"""
 
-    def __init__(self, in_features, out_features, dropout=1, weight_initializer=None, bias_initializer=None,
+    def __init__(self, in_features, out_features, dropout=0.0, weight_initializer=None, bias_initializer=None,
                  trainable=True,
                  name=None, **kwargs):
         super(Linear, self).__init__(name=name, trainable=trainable, **kwargs)
         self.in_features = in_features
         self.out_features = out_features
-        stddev = math.sqrt(dropout / in_features)
+        stddev = math.sqrt((1.0 - dropout) / in_features)
         self.weight_initializer = weight_initializer if weight_initializer is not None else tf.truncated_normal_initializer(
             mean=0,
             stddev=stddev)
@@ -81,7 +81,7 @@ class SinusoidalEncodingEmbedding(tf.layers.Layer):
 class Conv1d(CNNCell):
     def __init__(self, in_channels, out_channels, kernel_size, dilation, activation, is_incremental,
                  is_training,
-                 dropout=1, kernel_initializer=None, bias_initializer=None,
+                 dropout=0.0, kernel_initializer=None, bias_initializer=None,
                  normalize_weight=False, trainable=True, name=None):
         super(Conv1d, self).__init__(name=name, trainable=trainable)
         self.in_channels = in_channels
@@ -123,7 +123,7 @@ class Conv1d(CNNCell):
         out_channels = self.out_channels
 
         std_factor = 4.0 if self.normalize_weight else 1.0
-        std = math.sqrt((std_factor * self.dropout) / (float(kernel_size) * in_channels))
+        std = math.sqrt((std_factor * (1.0 - self.dropout)) / (float(kernel_size) * in_channels))
         kernel_initializer = tf.truncated_normal_initializer(mean=0.,
                                                              stddev=std) if self.kernel_initializer is None else self.kernel_initializer
         kernel_trainability = not self.normalize_weight
@@ -181,7 +181,7 @@ class Conv1dGLU(CNNCell):
         self.dilation = dilation
         self._is_incremental = is_incremental
         std_factor = 4.0
-        self.kernel_stddev = math.sqrt((std_factor * dropout) / (float(kernel_size) * in_channels))
+        self.kernel_stddev = math.sqrt((std_factor * (1.0 - dropout)) / (float(kernel_size) * in_channels))
 
         self.kernel_initializer = kernel_initializer if kernel_initializer is not None else tf.truncated_normal_initializer(
             mean=0.,
@@ -206,7 +206,7 @@ class Conv1dGLU(CNNCell):
 
     def call(self, inputs, input_buffer=None):
         residual = inputs
-        x = tf.layers.dropout(inputs, rate=1. - self.dropout, training=self.training)
+        x = tf.layers.dropout(inputs, rate=self.dropout, training=self.training)
         # split at C
         splitdim = -1
         if self.is_incremental:
