@@ -18,8 +18,13 @@ class Encoder(tf.layers.Layer):
         self.dropout = dropout
         self.training = training
         self.embed_tokens = Embedding(n_vocab, embed_dim, embedding_weight_std)
-        self.convolutions = MultiCNNCell(
-            [Conv1dGLU(out_channels, kernel_size, dilation) for (out_channels, kernel_size, dilation) in convolutions])
+        convolutions = []
+        in_channels = embed_dim
+        for (out_channels, kernel_size, dilation) in convolutions:
+            convGLU = Conv1dGLU(in_channels, out_channels, kernel_size, dropout, dilation)
+            convolutions.append(convGLU)
+            in_channels = convGLU.out_channels
+        self.convolutions = MultiCNNCell(convolutions, is_incremental=False)
 
     def build(self, _):
         self.built = True
@@ -35,6 +40,7 @@ class Encoder(tf.layers.Layer):
         # add output to input embedding for attention
         values = (keys + input_embedding) + math.sqrt(0.5)
         return keys, values
+
 
 class ScaledDotProductAttentionMechanism(AttentionMechanism):
     def __init__(self, keys, values, embed_dim, window_ahead=3, window_backward=1, dropout=0.1, use_key_projection=True,
@@ -325,51 +331,58 @@ class MultiHopAttention(CNNCell):
         return sum([state.alignments for state in states]) / len(states)
 
 
-def DecoderPreNetCNN(params, dropout=0.1, is_incremental=False):
-    # ToDo: support in_channels != out_channels
-    layer = MultiCNNCell([
-        Conv1dGLU(in_channels, out_channels, kernel_size,
-                  dropout=dropout, dilation=dilation, residual=False,
-                  is_incremental=is_incremental)
-        for in_channels, out_channels, kernel_size, dilation in params])
-    return layer
+class DecoderPreNetCNNArgs(namedtuple("DecoderPreNetCNNArgs", ["out_channels", "kernel_size", "dilation"])):
+    pass
 
 
-DecoderPrenetFCArgs = namedtuple("DecoderPrenetFCArgs", ["in_features", "out_features", "dropout"])
+class DecoderPreNetCNN(CNNCell):
+    def __init__(self, in_channels, params, dropout=0.1, is_incremental=False,
+                 kernel_initializer=None, bias_initializer=None, training=False,
+                 trainable=True, name=None, **kwargs):
+        super(DecoderPreNetCNN, self).__init__(name=name, trainable=trainable, **kwargs)
+        adjust_layer = Conv1d(in_channels, params[0].out_channels, kernel_size=1, dilation=1, activation=tf.nn.relu,
+                              is_incremental=is_incremental, is_training=training,
+                              kernel_initializer=kernel_initializer,
+                              bias_initializer=bias_initializer, normalize_weight=True)
+        layers = [adjust_layer]
+        in_channels = adjust_layer.out_channels
+        for out_channels, kernel_size, dilation in params:
+            conv = Conv1dGLU(in_channels, out_channels, kernel_size,
+                             dropout=dropout, dilation=dilation, residual=False,
+                             kernel_initializer=kernel_initializer, bias_initializer=bias_initializer,
+                             is_incremental=is_incremental, is_training=training)
+            layers.append(conv)
+            in_channels = conv.out_channels
 
+        self.layer = MultiCNNCell(layers, is_incremental)
 
-class DecoderPrenetFC(tf.layers.Layer):
-    def __init__(self, params, weight_initializer=None, bias_initializer=None, is_incremental=False,
-                 training=False,
-                 trainable=True,
-                 name=None, **kwargs):
-        super(DecoderPrenetFC, self).__init__(name=name, trainable=trainable, **kwargs)
-        # ToDo: support in_channels != out_channels
-        self.layers = [
-            [Linear(in_features, out_features, dropout=dropout, weight_initializer=weight_initializer,
-                    bias_initializer=bias_initializer),
-             tf.layers.Dropout(rate=dropout)] for
-            in_features, out_features, dropout in params]
-        self._output_size = params[-1][1]
-        self.training = training
+        self._is_incremental = is_incremental
+
+    @property
+    def is_incremental(self):
+        return self._is_incremental
+
+    @property
+    def state_size(self):
+        return self.layer.state_size
 
     @property
     def output_size(self):
-        return self._output_size
+        return self.layer.output_size
+
+    def zero_state(self, batch_size, dtype):
+        return self.layer.zero_state(batch_size, dtype)
 
     def build(self, _):
         self.built = True
 
     def call(self, inputs, **kwargs):
-        next_input = inputs
-        for [layer, dropout] in self.layers:
-            next_input = tf.nn.relu(dropout(layer(next_input), training=self.training))
-        return next_input
+        return self.layer(inputs, **kwargs)
 
 
 class Decoder(tf.layers.Layer):
     def __init__(self, embed_dim, in_dim=80, r=5, max_positions=512,
-                 preattention=(DecoderPrenetFCArgs(128, 5, 0.1),) * 4,
+                 preattention=(DecoderPreNetCNNArgs(128, 5, 1),) * 4,
                  mh_attentions=(MultiHopAttentionArgs(128, 5, 1, 0.1),) * 4, dropout=0.1,
                  use_memory_mask=False,
                  query_position_rate=1.0,
@@ -409,13 +422,11 @@ class Decoder(tf.layers.Layer):
         self.embed_query_positions = SinusoidalEncodingEmbedding(max_positions, mh_attentions[0].out_channels)
         self.embed_key_positions = SinusoidalEncodingEmbedding(max_positions, embed_dim)
 
-        in_features = in_dim * r
-        assert preattention[0][0] == in_dim * r
-        # preattention_params = [(in_features, out_features, dropout) for
-        #                        in_features, out_features, dropout in preattention]
-        self.preattention = DecoderPrenetFC(params=preattention, is_incremental=is_incremental,
-                                            weight_initializer=prenet_weight_initializer,
-                                            bias_initializer=prenet_bias_initializer, training=training)
+        self.preattention = DecoderPreNetCNN(in_channels=in_dim * r, params=preattention, dropout=dropout,
+                                             is_incremental=is_incremental,
+                                             kernel_initializer=prenet_weight_initializer,
+                                             bias_initializer=prenet_bias_initializer,
+                                             training=training)
 
         assert self.preattention.output_size == self.embed_query_positions.embedding_dim
 
@@ -530,7 +541,8 @@ class Decoder(tf.layers.Layer):
         test_inputs = test_inputs if test_inputs is None else self.append_unused_final_test_input(test_inputs,
                                                                                                   batch_size)
 
-        def condition(time, unused_input, unused_attention_state, unused_frame_pos, unused_last_conv_state,
+        def condition(time, unused_input, unused_preattention_state, unused_attention_state, unused_frame_pos,
+                      unused_last_conv_state,
                       unused_outputs, done):
             termination_criteria = tf.greater(done, 0.5)
             minimum_requirement = tf.greater(time, self.min_decoder_steps)
@@ -540,15 +552,16 @@ class Decoder(tf.layers.Layer):
             result = tf.logical_not(termination)
             return tf.squeeze(tf.reduce_all(result, axis=0))
 
-        def test_condition(time, unused_input, unused_attention_state, unused_frame_pos, unused_last_conv_state,
+        def test_condition(time, unused_input, unused_preattention_state, unused_attention_state, unused_frame_pos,
+                           unused_last_conv_state,
                            unused_outputs, done):
             return tf.less(time, test_input_length)
 
-        def body(time, input, attention_state, frame_pos, last_conv_state, outputs, done):
+        def body(time, input, preattention_state, attention_state, frame_pos, last_conv_state, outputs, done):
             w = self.query_position_rate
             frame_pos_embed = self.embed_query_positions(frame_pos, w)
             x = tf.layers.dropout(input, rate=self.dropout, training=self.training)
-            x = self.preattention(x)
+            x, next_preattention_state = self.preattention(x, state=preattention_state)
             (x, _), next_attention_states = attention.apply(CNNAttentionWrapperInput(x, frame_pos_embed),
                                                             attention_state)
             x, next_last_conv_state = self.last_conv(x, last_conv_state)
@@ -561,7 +574,7 @@ class Decoder(tf.layers.Layer):
             next_frame_pos = frame_pos + 1
             output = output if test_inputs is None else tf.expand_dims(test_inputs[:, next_time, :], axis=1)
             return (
-                next_time, output, next_attention_states, next_frame_pos, next_last_conv_state,
+                next_time, output, next_preattention_state, next_attention_states, next_frame_pos, next_last_conv_state,
                 outputs,
                 done)
 
@@ -572,8 +585,9 @@ class Decoder(tf.layers.Layer):
         condition_function = condition if test_inputs is None else test_condition
         initial_input = self.initial_input(batch_size) if test_inputs is None else tf.expand_dims(test_inputs[:, 0, :],
                                                                                                   axis=1)
-        _, _, final_attention_state, _, _, out_online_ta, _ = tf.while_loop(condition_function, body, (
-            time, initial_input, attention.zero_state(batch_size, tf.float32),
+        _, _, _, final_attention_state, _, _, out_online_ta, _ = tf.while_loop(condition_function, body, (
+            time, initial_input, self.preattention.zero_state(batch_size, tf.float32),
+            attention.zero_state(batch_size, tf.float32),
             self.initial_frame_pos(batch_size), self.last_conv.zero_state(batch_size, tf.float32), outputs_ta,
             initial_done))
         output_online = nest.map_structure(lambda ta: ta.stack(), out_online_ta)

@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume, HealthCheck
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPrenetFCArgs
+from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPreNetCNNArgs
 import tensorflow.contrib.eager as tfe
 
 tfe.enable_eager_execution()
@@ -49,10 +49,10 @@ def all_args(draw, batch_size=integers(1, 3), query_channels=integers(2, 20).fil
 
 class DecoderTest(tf.test.TestCase):
 
-    @given(args=all_args(), num_preattention=integers(1, 1),
+    @given(args=all_args(), num_preattention=integers(1, 3), preattention_kernel_size=integers(1, 9),
            num_mha=integers(1, 4))
     @settings(max_examples=10, timeout=unlimited, suppress_health_check=[HealthCheck.too_slow])
-    def test_decoder(self, args, num_preattention, num_mha):
+    def test_decoder(self, args, num_preattention, preattention_kernel_size, num_mha):
         tf.set_random_seed(12345678)
         query, mha_arg, memory, in_dim, r = args
         batch_size = 1
@@ -65,17 +65,21 @@ class DecoderTest(tf.test.TestCase):
         print("query", query)
         print("memory", memory)
 
-        preattention_in_features = r * in_dim
-        preattention_args = (DecoderPrenetFCArgs(preattention_in_features, mha_arg.out_channels, dropout=0.0),) * num_preattention
+        preattention_args = [DecoderPreNetCNNArgs(mha_arg.out_channels, preattention_kernel_size, dilation=2 ** i) for i
+                             in range(num_preattention)]
 
         def one_tenth_initializer(length):
             half = length // 2
             return np.stack([0.1 * -1 * np.ones(half), 0.1 * np.ones(half)]).reshape(length, order='F')
 
-        prenet_weight_initializer = tf.constant_initializer(one_tenth_initializer(preattention_in_features * mha_arg.out_channels))
-        attention_key_projection_weight_initializer = tf.constant_initializer(one_tenth_initializer(embed_dim * embed_dim))
-        attention_value_projection_weight_initializer = tf.constant_initializer(one_tenth_initializer(embed_dim * embed_dim))
-        attention_kernel_initializer = tf.constant_initializer(one_tenth_initializer(mha_arg.kernel_size * mha_arg.out_channels * mha_arg.out_channels*2))
+        # prenet_weight_initializer = tf.constant_initializer(one_tenth_initializer(preattention_in_features * mha_arg.out_channels))
+        prenet_weight_initializer = tf.ones_initializer()
+        attention_key_projection_weight_initializer = tf.constant_initializer(
+            one_tenth_initializer(embed_dim * embed_dim))
+        attention_value_projection_weight_initializer = tf.constant_initializer(
+            one_tenth_initializer(embed_dim * embed_dim))
+        attention_kernel_initializer = tf.constant_initializer(
+            one_tenth_initializer(mha_arg.kernel_size * mha_arg.out_channels * mha_arg.out_channels * 2))
         _attention_weight = one_tenth_initializer(mha_arg.out_channels * embed_dim)
         attention_query_projection_weight_initializer = tf.constant_initializer(_attention_weight)
         attention_out_projection_weight_initializer = tf.constant_initializer(_attention_weight)
@@ -109,7 +113,8 @@ class DecoderTest(tf.test.TestCase):
                                  )
 
         # frame pos start with 1
-        frame_positions = tf.zeros(shape=(batch_size, T_query), dtype=tf.int32) + tf.range(1, T_query + 1, dtype=tf.int32)
+        frame_positions = tf.zeros(shape=(batch_size, T_query), dtype=tf.int32) + tf.range(1, T_query + 1,
+                                                                                           dtype=tf.int32)
         text_positions = tf.zeros(shape=(batch_size, T_memory), dtype=tf.int32) + tf.range(0, T_memory, dtype=tf.int32)
 
         keys, values = tf.constant(memory), tf.constant(memory)
@@ -130,11 +135,10 @@ class DecoderTest(tf.test.TestCase):
         print("-" * 100)
         self.assertAllClose(out, out_online)
 
-
-    @given(args=all_args(), num_preattention=integers(1, 1),
+    @given(args=all_args(), num_preattention=integers(1, 3), preattention_kernel_size=integers(1, 9),
            num_mha=integers(1, 4))
     @settings(max_examples=10, timeout=unlimited)
-    def test_decoder_inference(self, args, num_preattention, num_mha):
+    def test_decoder_inference(self, args, num_preattention, preattention_kernel_size, num_mha):
         tf.set_random_seed(12345678)
         query, mha_arg, memory, in_dim, r = args
         batch_size = 1
@@ -145,14 +149,16 @@ class DecoderTest(tf.test.TestCase):
         assume(T_query < max_positions and T_memory < max_positions)
         print("query", query)
         print("memory", memory)
-        preattention_in_features = r * in_dim
-        preattention_args = (DecoderPrenetFCArgs(preattention_in_features, mha_arg.out_channels, dropout=0.0),) * num_preattention
+
+        preattention_args = [DecoderPreNetCNNArgs(mha_arg.out_channels, preattention_kernel_size, dilation=2 ** i) for i
+                             in range(num_preattention)]
         decoder_online = Decoder(embed_dim, in_dim, r, max_positions, preattention=preattention_args,
                                  mh_attentions=(mha_arg,) * num_mha,
                                  dropout=0.0, max_decoder_steps=T_query, min_decoder_steps=T_query, is_incremental=True)
 
         # frame pos start with 1
-        frame_positions = tf.zeros(shape=(batch_size, T_query), dtype=tf.int32) + tf.range(1, T_query + 1, dtype=tf.int32)
+        frame_positions = tf.zeros(shape=(batch_size, T_query), dtype=tf.int32) + tf.range(1, T_query + 1,
+                                                                                           dtype=tf.int32)
         text_positions = tf.zeros(shape=(batch_size, T_memory), dtype=tf.int32) + tf.range(0, T_memory, dtype=tf.int32)
 
         keys, values = tf.constant(memory), tf.constant(memory)
