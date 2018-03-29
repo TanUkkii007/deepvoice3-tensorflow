@@ -52,6 +52,7 @@ class FrontendTest(tf.test.TestCase):
 
         hparams = tf.contrib.training.HParams(
             num_mels=80,
+            fft_size=1024,
             downsample_step=4,
             outputs_per_step=r,
             batch_size=2,
@@ -103,9 +104,9 @@ class FrontendTest(tf.test.TestCase):
                                     t.mel[1][target_length2:])
 
                 # spec padding
-                self.assertAllEqual(np.zeros([max_target_length - target_length1, 513]),
+                self.assertAllEqual(np.zeros([max_target_length - target_length1, hparams.fft_size // 2 + 1]),
                                     t.spec[0][target_length1:])
-                self.assertAllEqual(np.zeros([max_target_length - target_length2, 513]),
+                self.assertAllEqual(np.zeros([max_target_length - target_length2, hparams.fft_size // 2 + 1]),
                                     t.spec[1][target_length2:])
 
                 # done
