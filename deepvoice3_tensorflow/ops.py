@@ -53,6 +53,9 @@ def causal_conv(value, filter_, dilation, name='causal_conv'):
         result = tf.slice(restored, [0, 0, 0], [-1, out_width, -1])
         return result
 
+def noncausal_conv(value, filter_, dilation):
+    return tf.nn.convolution(value, filter_, padding='SAME', dilation_rate=[dilation])
+
 
 # ToDo: do not use tf.layers.Layer. see tf.nn.convolution.
 class Conv1dIncremental(tf.layers.Layer):

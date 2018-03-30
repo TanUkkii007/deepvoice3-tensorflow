@@ -1,7 +1,8 @@
 import tensorflow as tf
 import math
 from collections import namedtuple
-from .modules import Linear, Embedding, Conv1d, Conv1dGLU, SinusoidalEncodingEmbedding
+from .modules import Linear, Embedding, Conv1d, NonCausalConv1d, Conv1dGLU, NonCausalConv1dGLU, \
+    SinusoidalEncodingEmbedding
 from .cnn_cell import CNNCell, MultiCNNCell
 from tensorflow.contrib.seq2seq.python.ops.attention_wrapper import AttentionMechanism
 from tensorflow.python.util import nest
@@ -9,7 +10,7 @@ from tensorflow.python.util import nest
 
 class Encoder(tf.layers.Layer):
     def __init__(self, n_vocab, embed_dim, embedding_weight_std=0.1,
-                 convolutions=((64, 5, .1),) * 7,
+                 convolutions=((64, 5, .1),) * 7,  # ToDo: use named tuple
                  dropout=0.1,
                  training=False,
                  trainable=True,
@@ -18,13 +19,12 @@ class Encoder(tf.layers.Layer):
         self.dropout = dropout
         self.training = training
         self.embed_tokens = Embedding(n_vocab, embed_dim, embedding_weight_std)
-        convolutions = []
         in_channels = embed_dim
-        for (out_channels, kernel_size, dilation) in convolutions:
-            convGLU = Conv1dGLU(in_channels, out_channels, kernel_size, dropout, dilation)
-            convolutions.append(convGLU)
-            in_channels = convGLU.out_channels
-        self.convolutions = MultiCNNCell(convolutions, is_incremental=False)
+        adjustion_layer = NonCausalConv1d(in_channels, convolutions[0][0], kernel_size=1, dilation=1,
+                                          activation=tf.nn.relu)
+        self.convolutions = [adjustion_layer] + [
+            NonCausalConv1dGLU(out_channels, out_channels, kernel_size, dropout, dilation) for
+            (out_channels, kernel_size, dilation) in convolutions]
 
     def build(self, _):
         self.built = True
@@ -34,8 +34,10 @@ class Encoder(tf.layers.Layer):
         x = tf.layers.dropout(x, rate=self.dropout, training=self.training)
 
         input_embedding = x
+        keys = x
         # use normal convolution instead of causal convolution
-        keys = self.convolutions(x)
+        for conv in self.convolutions:
+            keys = conv(keys)
 
         # add output to input embedding for attention
         values = (keys + input_embedding) + math.sqrt(0.5)
@@ -199,7 +201,7 @@ class CNNAttentionWrapper(CNNCell):
         # To support residual connection in_channels == out_channels is necessary.
         assert in_channels == out_channels
         self.convolution = Conv1dGLU(in_channels, out_channels, kernel_size,
-                                     dropout=dropout, dilation=dilation, residual=False,
+                                     dropout=dropout, dilation=dilation,
                                      kernel_initializer=kernel_initializer,
                                      is_incremental=is_incremental,
                                      is_training=training)
@@ -348,7 +350,7 @@ class DecoderPreNetCNN(CNNCell):
         in_channels = adjust_layer.out_channels
         for out_channels, kernel_size, dilation in params:
             conv = Conv1dGLU(in_channels, out_channels, kernel_size,
-                             dropout=dropout, dilation=dilation, residual=False,
+                             dropout=dropout, dilation=dilation,
                              kernel_initializer=kernel_initializer, bias_initializer=bias_initializer,
                              is_incremental=is_incremental, is_training=training)
             layers.append(conv)

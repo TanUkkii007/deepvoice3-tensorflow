@@ -1,5 +1,5 @@
 import tensorflow as tf
-from .ops import causal_conv, Conv1dIncremental
+from .ops import causal_conv, noncausal_conv, Conv1dIncremental
 from .weight_normalization import weight_normalization
 from .cnn_cell import CNNCell
 from .positional_concoding import PositionalEncoding
@@ -51,6 +51,7 @@ class Embedding(tf.layers.Layer):
 
     def build(self, _):
         weight = self.add_variable("weight", shape=(self.num_embeddings, self.embedding_dim),
+                                   dtype=tf.float32,
                                    initializer=self.weight_initializer,
                                    trainable=False)
         self.normalized_weight = weight_normalization(weight)
@@ -164,12 +165,57 @@ class Conv1d(CNNCell):
             return ha
 
 
+class NonCausalConv1d(tf.layers.Layer):
+    def __init__(self, in_channels, out_channels, kernel_size, dilation, activation,
+                 dropout=0.0, kernel_initializer=None, bias_initializer=None,
+                 normalize_weight=False, trainable=True, name=None):
+        super(NonCausalConv1d, self).__init__(name=name, trainable=trainable)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.activation = activation
+        self.dropout = dropout
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.normalize_weight = normalize_weight
+
+    def build(self, input_shape):
+        assert input_shape[2].value == self.in_channels
+        kernel_size = self.kernel_size
+        in_channels = self.in_channels
+        out_channels = self.out_channels
+
+        std_factor = 4.0 if self.normalize_weight else 1.0
+        std = math.sqrt((std_factor * (1.0 - self.dropout)) / (float(kernel_size) * in_channels))
+        kernel_initializer = tf.truncated_normal_initializer(mean=0.,
+                                                             stddev=std) if self.kernel_initializer is None else self.kernel_initializer
+        kernel_trainability = not self.normalize_weight
+        self.kernel = self.add_variable("kernel",
+                                        shape=[kernel_size, in_channels, out_channels],
+                                        initializer=kernel_initializer,
+                                        trainable=kernel_trainability)
+        if self.normalize_weight:
+            self.kernel = weight_normalization(self.kernel)
+        bias_initializer = tf.zeros_initializer() if self.bias_initializer is None else self.bias_initializer
+        self.bias = self.add_variable("bias",
+                                      shape=(1, 1, out_channels),
+                                      initializer=bias_initializer)
+        self.built = True
+
+    def call(self, inputs, **kwargs):
+        conv1d_output = noncausal_conv(inputs, self.kernel, self.dilation)
+        ha = self.activation(conv1d_output + self.bias) if self.activation is not None else (
+                conv1d_output + self.bias)
+        return ha
+
+
 class Conv1dGLU(CNNCell):
     """(Dilated) Conv1d + Gated linear unit + (optionally) speaker embedding
     """
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 dropout, dilation=1, residual=False, kernel_initializer=None, bias_initializer=None,
+                 dropout, dilation=1, kernel_initializer=None, bias_initializer=None,
                  is_incremental=False, is_training=False, trainable=True, name=None):
         assert in_channels % 2 == 0
         super(Conv1dGLU, self).__init__(name=name, trainable=trainable)
@@ -177,7 +223,6 @@ class Conv1dGLU(CNNCell):
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.dropout = dropout
-        self.residual = residual
         self.dilation = dilation
         self._is_incremental = is_incremental
         std_factor = 4.0
@@ -202,7 +247,7 @@ class Conv1dGLU(CNNCell):
         with tf.control_dependencies([
             tf.assert_equal(self.in_channels, in_channels_tensor)
         ]):
-            super(Conv1dGLU, self).build(input_shape)
+            self.built = True
 
     def call(self, inputs, input_buffer=None):
         residual = inputs
@@ -216,9 +261,7 @@ class Conv1dGLU(CNNCell):
 
         a, b = tf.split(x, num_or_size_splits=2, axis=splitdim)
         # apply GLU
-        x = a * tf.nn.sigmoid(b)
-        # to preserve variance after residual connection, scale by \sqrt{0.5}
-        output = (x + residual) * math.sqrt(0.5) if self.residual else x
+        output = a * tf.nn.sigmoid(b)
         if self.is_incremental:
             return output, next_input_buffer
         else:
@@ -240,15 +283,55 @@ class Conv1dGLU(CNNCell):
         return self.convolution.zero_state(batch_size, dtype)
 
 
-def conv1dGLU(input, in_channels, out_channels, kernel_size,
-              dropout, dilation=1, residual=False, is_training=False):
-    module = Conv1dGLU(in_channels, out_channels, kernel_size,
-                       dropout, dilation, residual, is_incremental=False)
-    return module.apply(input, training=is_training)
+class NonCausalConv1dGLU(tf.layers.Layer):
+    """(Dilated) Conv1d + Gated linear unit + (optionally) speaker embedding
+    """
 
+    def __init__(self, in_channels, out_channels, kernel_size,
+                 dropout, dilation=1, kernel_initializer=None, bias_initializer=None,
+                 is_incremental=False, is_training=False, trainable=True, name=None):
+        assert in_channels % 2 == 0
+        super(NonCausalConv1dGLU, self).__init__(name=name, trainable=trainable)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.dropout = dropout
+        self.dilation = dilation
+        self._is_incremental = is_incremental
+        std_factor = 4.0
+        self.kernel_stddev = math.sqrt((std_factor * (1.0 - dropout)) / (float(kernel_size) * in_channels))
 
-def conv1dGLU_incremental(input, in_channels, out_channels, kernel_size,
-                          dropout, input_buffer, dilation=1, residual=False, is_training=False):
-    module = Conv1dGLU(in_channels, out_channels, kernel_size,
-                       dropout, dilation, residual, is_incremental=True)
-    return module.apply(input, input_buffer=input_buffer, training=is_training)
+        self.kernel_initializer = kernel_initializer if kernel_initializer is not None else tf.truncated_normal_initializer(
+            mean=0.,
+            stddev=self.kernel_stddev)
+        self.bias_initializer = bias_initializer if bias_initializer is not None else tf.zeros_initializer()
+
+        self.convolution = NonCausalConv1d(in_channels, 2 * out_channels, kernel_size, dilation, activation=None,
+                                           dropout=dropout,
+                                           kernel_initializer=self.kernel_initializer,
+                                           bias_initializer=self.bias_initializer,
+                                           normalize_weight=True
+                                           )
+        self.training = is_training
+
+    def build(self, input_shape):
+        in_channels_tensor = input_shape[2]
+        with tf.control_dependencies([
+            tf.assert_equal(self.in_channels, in_channels_tensor)
+        ]):
+            self.built = True
+
+    def call(self, inputs, input_buffer=None):
+        residual = inputs
+        x = tf.layers.dropout(inputs, rate=self.dropout, training=self.training)
+        # split at C
+        splitdim = -1
+
+        x = self.convolution(x)
+
+        a, b = tf.split(x, num_or_size_splits=2, axis=splitdim)
+        # apply GLU
+        x = a * tf.nn.sigmoid(b)
+        # to preserve variance after residual connection, scale by \sqrt{0.5}
+        output = (x + residual) * math.sqrt(0.5)
+        return output
