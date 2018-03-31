@@ -62,13 +62,12 @@ class MultiCNNCell(CNNCell):
         new_states = []
         current_input = inputs
         for i, cell in enumerate(self._cells):
-            with tf.variable_scope("cell_%d" % i):
-                if cell.require_state:
-                    current_state = state[i]
-                    current_input, new_state = cell(current_input, current_state)
-                    new_states.append(new_state)
-                else:
-                    current_input = cell.apply(current_input)
-                    new_states.append(None)
+            if cell.require_state:
+                current_state = state[i]
+                current_input, new_state = cell(current_input, current_state)
+                new_states.append(new_state)
+            else:
+                current_input = cell.apply(current_input)
+                new_states.append(None)
         return current_input if not self.require_state else (current_input, new_states)
 
