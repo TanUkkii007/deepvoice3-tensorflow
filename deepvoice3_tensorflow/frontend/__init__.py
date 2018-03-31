@@ -59,7 +59,9 @@ class Frontend():
             # imitates initial decoder states
             b_pad = r
             spec = tf.pad(target.spec, paddings=tf.constant([[b_pad, 0], [0, 0]]))
+            spec.set_shape((None, self.hparams.fft_size // 2 + 1))
             mel = tf.pad(target.mel, paddings=tf.constant([[b_pad, 0], [0, 0]]))
+            mel.set_shape((None, self.hparams.num_mels))
             target_length = target.target_length + b_pad
 
             # done flag
@@ -118,9 +120,9 @@ class _FrontendZippedView():
                 ),
                 _PreparedTargetData(
                     id=tf.TensorShape([]),
-                    spec=tf.TensorShape([None, None]),
+                    spec=tf.TensorShape([None, self.hparams.fft_size // 2 + 1]),
                     spec_width=tf.TensorShape([]),
-                    mel=tf.TensorShape([None, None]),
+                    mel=tf.TensorShape([None, self.hparams.num_mels]),
                     mel_width=tf.TensorShape([]),
                     target_length=tf.TensorShape([]),
                     done=tf.TensorShape([None]),
