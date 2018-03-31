@@ -14,6 +14,8 @@ class FrontendTest(tf.test.TestCase):
         target = tf.data.TFRecordDataset(target_files)
 
         hparams = tf.contrib.training.HParams(
+            num_mels=80,
+            fft_size=1024,
             downsample_step=4,
             outputs_per_step=1,
             batch_size=2,
@@ -48,6 +50,7 @@ class FrontendTest(tf.test.TestCase):
         source = tf.data.TFRecordDataset(source_files)
         target = tf.data.TFRecordDataset(target_files)
 
+        batch_size = 2
         r = 1
 
         hparams = tf.contrib.training.HParams(
@@ -55,7 +58,7 @@ class FrontendTest(tf.test.TestCase):
             fft_size=1024,
             downsample_step=4,
             outputs_per_step=r,
-            batch_size=2,
+            batch_size=batch_size,
             approx_min_target_length=200,
             batch_bucket_width=50,
             batch_num_buckets=3,
@@ -122,5 +125,9 @@ class FrontendTest(tf.test.TestCase):
                                     t.done[1][target_length2 // r // hparams.downsample_step - 1:])
 
                 # frame_positions
+                self.assertEqual(batch_size, len(t.frame_positions))
                 self.assertAllEqual(np.arange(1, max_target_length // r // hparams.downsample_step + 1),
-                                    t.frame_positions)
+                                    t.frame_positions[0])
+                self.assertAllEqual(np.arange(1, max_target_length // r // hparams.downsample_step + 1),
+                                    t.frame_positions[1])
+                self.assertEqual(t.mel[:, 0::hparams.downsample_step, :].shape[1], t.frame_positions.shape[1])

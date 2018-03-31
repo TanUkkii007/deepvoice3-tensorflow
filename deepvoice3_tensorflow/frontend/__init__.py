@@ -168,7 +168,7 @@ class _FrontendBatchedView():
 
         def convert(source, target):
             max_decoder_target_len = tf.shape(target.mel)[1] // r // downsample_step
-            frame_positions = tf.range(1, max_decoder_target_len + 1)
+            frame_positions = tf.tile(tf.expand_dims(tf.range(1, max_decoder_target_len + 1), axis=0), [self.hparams.batch_size, 1])
             return source, PreparedTargetData(
                 id=target.id,
                 spec=target.spec,
@@ -188,3 +188,19 @@ class _FrontendBatchedViewWithFramePositions():
     def __init__(self, batched: tf.data.Dataset, hparams):
         self.dataset = batched
         self.hparams = hparams
+
+    def downsample_mel(self):
+        def convert(source, target):
+            return source, PreparedTargetData(
+                id=target.id,
+                spec=target.spec,
+                spec_width=target.spec_width,
+                mel=target.mel[:, 0::self.hparams.downsample_step, :],
+                mel_width=target.mel_width,
+                target_length=target.target_length,
+                done=target.done,
+                frame_positions=target.frame_positions,
+            )
+
+        converted = self.dataset.map(lambda x, y: convert(x, y))
+        return _FrontendBatchedViewWithFramePositions(converted, self.hparams)
