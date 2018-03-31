@@ -114,6 +114,7 @@ class Conv1d(CNNCell):
 
     def zero_state(self, batch_size, dtype):
         shape = self.state_size
+        # ToDo: Does not work if batch_size is a Tensor
         shape = shape.merge_with(tf.TensorShape([batch_size, None, None])) if not shape.is_fully_defined() else shape
         return tf.zeros(shape=shape, dtype=dtype)
 

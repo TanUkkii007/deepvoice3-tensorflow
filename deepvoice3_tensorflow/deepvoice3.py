@@ -468,9 +468,11 @@ class Decoder(tf.layers.Layer):
 
     def _call(self, encoder_out, inputs, text_positions=None, frame_positions=None):
         if inputs.shape[-1].value == self.in_dim:
-            _s = inputs.shape
-            inputs = tf.reshape(inputs, shape=(_s[0].value, _s[1].value // self.r, -1))
-        assert inputs.shape[-1] == self.in_dim * self.r
+            original_shape = inputs.shape
+            s = tf.shape(inputs)
+            new_shape = tf.stack([s[0], s[1] // self.r, tf.constant(-1, dtype=tf.int32)])
+            inputs = tf.reshape(inputs, shape=new_shape)
+            inputs.set_shape((original_shape[0].value, None, self.in_dim * self.r))
 
         keys, values = encoder_out
 
@@ -504,7 +506,7 @@ class Decoder(tf.layers.Layer):
                                          training=self.training)
 
         x, alignments = mp_attention(CNNAttentionWrapperInput(x, frame_pos_embed),
-                                     mp_attention.zero_state(inputs.shape[0].value, inputs.dtype))
+                                     mp_attention.zero_state(inputs.shape[0].value, inputs.dtype)) # ToDo: does not work when batch size is None
 
         # decoder_states = tf.transpose(x)
 
