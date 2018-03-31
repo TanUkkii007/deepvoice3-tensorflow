@@ -22,9 +22,10 @@ class Encoder(tf.layers.Layer):
         in_channels = embed_dim
         adjustion_layer = NonCausalConv1d(in_channels, convolutions[0][0], kernel_size=1, dilation=1,
                                           activation=tf.nn.relu)
+        last_conv = NonCausalConv1d(convolutions[-1][0], embed_dim, kernel_size=1, dilation=1, activation=None)
         self.convolutions = [adjustion_layer] + [
             NonCausalConv1dGLU(out_channels, out_channels, kernel_size, dropout, dilation) for
-            (out_channels, kernel_size, dilation) in convolutions]
+            (out_channels, kernel_size, dilation) in convolutions] + [last_conv]
 
     def build(self, _):
         self.built = True
