@@ -106,7 +106,9 @@ class _FrontendZippedView():
             return tf.minimum(tf.to_int64(num_buckets), bucket_id)
 
         def reduce_func(unused_key, window: tf.data.Dataset):
-            return window.padded_batch(batch_size, padded_shapes=(
+            # ToDo: use padded_batch instead of padded_batch_and_drop_remainder
+            # Currently this model only works with static batch size
+            apply_fn = tf.contrib.data.padded_batch_and_drop_remainder(batch_size, padded_shapes=(
                 PreparedSourceData(
                     id=tf.TensorShape([]),
                     text=tf.TensorShape([]),
@@ -147,6 +149,7 @@ class _FrontendZippedView():
                     target_length=tf.to_int64(0),
                     done=tf.to_float(1),
                 )))
+            return window.apply(apply_fn)
 
         batched = self.dataset.apply(tf.contrib.data.group_by_window(key_func,
                                                                      reduce_func,
