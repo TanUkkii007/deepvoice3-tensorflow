@@ -19,10 +19,40 @@ hparams = tf.contrib.training.HParams(
     rescaling_max=0.999,
     allow_clipping_in_normalization=False,
 
+    # Model:
+    downsample_step=4,  # must be 4 when builder="nyanko"
+    outputs_per_step=1,  # must be 1 when builder="nyanko"
+    embedding_weight_std=0.1,
+    padding_idx=0,
+    # Maximum number of input text length
+    # try setting larger value if you want to give very long text input
+    max_positions=512,
+    n_vocab=0xffff, # jsut
+    dropout=1 - 0.95,
+    kernel_size=3,
+    text_embed_dim=128,
+    text_embedding_weight_std=0.1,
+    encoder_channels=256,
+    decoder_channels=256,
+    query_position_rate=1.0,
+    max_decoder_steps=200,
+    min_decoder_steps=10,
+    # can be computed by `compute_timestamp_ratio.py`.
+    key_position_rate=2.37, # for jsut
+    key_projection=False,
+    value_projection=False,
+    use_memory_mask=True,
+    trainable_positional_encodings=False,
+    freeze_embedding=False,
+
     # Training
     batch_size=16,
     approx_min_target_length = 200,
     batch_bucket_width = 20,
     batch_num_buckets = 20,
+    initial_learning_rate=5e-4,  # 0.001,
+    adam_beta1=0.5,
+    adam_beta2=0.9,
+    adam_eps=1e-6,
     )
 
