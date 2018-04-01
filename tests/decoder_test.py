@@ -118,7 +118,7 @@ class DecoderTest(tf.test.TestCase):
         text_positions = tf.zeros(shape=(batch_size, T_memory), dtype=tf.int32) + tf.range(0, T_memory, dtype=tf.int32)
 
         keys, values = tf.constant(memory), tf.constant(memory)
-        out, done = decoder((keys, values), input=tf.constant(query),
+        out, done, _ = decoder((keys, values), input=tf.constant(query),
                             frame_positions=frame_positions, text_positions=text_positions)
 
         out_online = decoder_online((keys, values),

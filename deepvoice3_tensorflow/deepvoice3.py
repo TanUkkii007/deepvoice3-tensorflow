@@ -518,7 +518,7 @@ class Decoder(tf.layers.Layer):
 
         # Done flag
         done = tf.sigmoid(self.fc(x))
-        return outputs, done
+        return outputs, done, alignments
 
     def _call_incremental(self, encoder_out, text_positions, test_inputs=None):
         keys, values = encoder_out
@@ -599,8 +599,6 @@ class Decoder(tf.layers.Layer):
 
         output_online = tf.squeeze(output_online, axis=2)
         output_online = tf.transpose(output_online, perm=(1, 0, 2))
-
-        ave_alignment = MultiHopAttention.average_alignment(final_attention_state)
 
         return output_online
 

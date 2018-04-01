@@ -23,6 +23,7 @@ setup(name='deepvoice3_tensorflow',
           "train": [
               "docopt",
               "nnmnkwii",
+              "matplotlib",
           ],
           "jp": [
               "jaconv",

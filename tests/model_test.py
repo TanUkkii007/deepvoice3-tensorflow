@@ -1,5 +1,6 @@
 import tensorflow as tf
 import os
+import tempfile
 from deepvoice3_tensorflow.models import SingleSpeakerTTSModel
 from deepvoice3_tensorflow.frontend import Frontend
 
@@ -8,6 +9,7 @@ class ModelTest(tf.test.TestCase):
 
     def test_train(self):
         tf.logging.set_verbosity(tf.logging.INFO)
+        model_dir = tempfile.mkdtemp()
         r = 1
         hparams = tf.contrib.training.HParams(
             num_mels=80,
@@ -39,6 +41,7 @@ class ModelTest(tf.test.TestCase):
             adam_beta1=0.5,
             adam_beta2=0.9,
             adam_eps=1e-6,
+            alignment_save_steps=2,
         )
 
         def train_input_fn():
@@ -52,6 +55,6 @@ class ModelTest(tf.test.TestCase):
             batched = frontend.prepare().zip_source_and_target().group_by_batch().add_frame_positions().downsample_mel().dataset
             return batched
 
-        estimator = SingleSpeakerTTSModel(hparams)
+        estimator = SingleSpeakerTTSModel(hparams, model_dir)
 
         estimator.train(lambda: train_input_fn(), steps=5)
