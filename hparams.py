@@ -3,7 +3,6 @@ import tensorflow as tf
 
 hparams = tf.contrib.training.HParams(
     name="deepvoice3",
-    frontend="en",
 
     # Audio
     num_mels=80,
@@ -20,8 +19,8 @@ hparams = tf.contrib.training.HParams(
     allow_clipping_in_normalization=False,
 
     # Model:
-    downsample_step=4,  # must be 4 when builder="nyanko"
-    outputs_per_step=1,  # must be 1 when builder="nyanko"
+    downsample_step=1,
+    outputs_per_step=1,
     embedding_weight_std=0.1,
     padding_idx=0,
     # Maximum number of input text length
@@ -54,6 +53,13 @@ hparams = tf.contrib.training.HParams(
     adam_beta1=0.5,
     adam_beta2=0.9,
     adam_eps=1e-6,
+    save_summary_steps=10,
+    log_step_count_steps=1,
     alignment_save_steps=10,
     )
 
+
+def hparams_debug_string():
+    values = hparams.values()
+    hp = ['  %s: %s' % (name, values[name]) for name in sorted(values)]
+    return 'Hyperparameters:\n' + '\n'.join(hp)

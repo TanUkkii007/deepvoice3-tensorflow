@@ -193,6 +193,18 @@ class JSUT():
     def in_dir(self):
         return self.file_path.strip(".zip")
 
+    @property
+    def data_num(self):
+        return 7696
+
+    @property
+    def source_files(self):
+        return (os.path.join(self.out_dir, "jsut-source-%05d.tfrecords" % i) for i in range(1, self.data_num + 1))
+
+    @property
+    def target_files(self):
+        return (os.path.join(self.out_dir, "jsut-target-%05d.tfrecords" % i) for i in range(1, self.data_num + 1))
+
 
 def instantiate(in_dir, out_dir):
     return JSUT(in_dir, out_dir)
