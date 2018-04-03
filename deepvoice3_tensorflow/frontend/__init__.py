@@ -1,5 +1,6 @@
 import tensorflow as tf
 import collections
+import math
 from data import PreprocessedTargetData, PreprocessedSourceData
 from data.tfrecord_utils import parse_preprocessed_source_data, parse_preprocessed_target_data, \
     decode_preprocessed_source_data, decode_preprocessed_target_data
@@ -22,6 +23,10 @@ class PreparedTargetData(
                            ["id", "spec", "spec_width", "mel", "mel_width", "target_length", "done",
                             "frame_positions"])):
     pass
+
+
+def _lcm(a, b):
+    return a * b // math.gcd(a, b)
 
 
 class Frontend():
@@ -59,10 +64,20 @@ class Frontend():
             # imitates initial decoder states
             b_pad = r
             spec = tf.pad(target.spec, paddings=tf.constant([[b_pad, 0], [0, 0]]))
-            spec.set_shape((None, self.hparams.fft_size // 2 + 1))
             mel = tf.pad(target.mel, paddings=tf.constant([[b_pad, 0], [0, 0]]))
-            mel.set_shape((None, self.hparams.num_mels))
             target_length = target.target_length + b_pad
+
+            # spec and mel length must be multiple of outputs_per_step and downsample_step
+            length_factor = _lcm(self.hparams.outputs_per_step, self.hparams.downsample_step)
+            # FixMe: extra padding when target_length % outputs_per_step % downsample_step == 0
+            padded_target_length = (target_length // length_factor + 1) * length_factor
+            tail_padding = padded_target_length - target_length
+            padding_shape = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[(0, 1)], values=tf.expand_dims(tail_padding, axis=0), dense_shape=(2, 2)))
+            spec = tf.pad(spec, paddings=padding_shape)
+            mel = tf.pad(mel, paddings=padding_shape)
+
+            spec.set_shape((None, self.hparams.fft_size // 2 + 1))
+            mel.set_shape((None, self.hparams.num_mels))
 
             # done flag
             done = tf.concat([tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32), tf.ones(1, dtype=tf.float32)], axis=0)
