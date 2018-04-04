@@ -69,12 +69,16 @@ class Frontend():
 
             # spec and mel length must be multiple of outputs_per_step and downsample_step
             length_factor = _lcm(self.hparams.outputs_per_step, self.hparams.downsample_step)
-            # FixMe: extra padding when target_length % outputs_per_step % downsample_step == 0
-            padded_target_length = (target_length // length_factor + 1) * length_factor
-            tail_padding = padded_target_length - target_length
-            padding_shape = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[(0, 1)], values=tf.expand_dims(tail_padding, axis=0), dense_shape=(2, 2)))
-            spec = tf.pad(spec, paddings=padding_shape)
-            mel = tf.pad(mel, paddings=padding_shape)
+            def padding_function(t):
+                padded_target_length = (target_length // length_factor + 1) * length_factor
+                tail_padding = padded_target_length - target_length
+                padding_shape = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[(0, 1)], values=tf.expand_dims(tail_padding, axis=0), dense_shape=(2, 2)))
+                return lambda :tf.pad(t, paddings=padding_shape)
+
+            no_padding_condition = tf.equal(tf.to_int64(0), target_length % length_factor)
+
+            spec = tf.cond(no_padding_condition, lambda: spec, padding_function(spec))
+            mel = tf.cond(no_padding_condition, lambda: mel, padding_function(mel))
 
             spec.set_shape((None, self.hparams.fft_size // 2 + 1))
             mel.set_shape((None, self.hparams.num_mels))

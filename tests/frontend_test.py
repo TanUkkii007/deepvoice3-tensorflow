@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import os
-from deepvoice3_tensorflow.frontend import Frontend
+from deepvoice3_tensorflow.frontend import Frontend, _lcm
 
 
 class FrontendTest(tf.test.TestCase):
@@ -52,7 +52,7 @@ class FrontendTest(tf.test.TestCase):
         target = tf.data.TFRecordDataset(target_files)
 
         batch_size = 2
-        r = 3
+        r = 1
 
         hparams = tf.contrib.training.HParams(
             num_mels=80,
@@ -105,6 +105,9 @@ class FrontendTest(tf.test.TestCase):
 
                 # max_target_length factor
                 self.assertEqual(0, max_target_length % r % hparams.downsample_step)
+
+                # minimum padding
+                self.assertLess(max_target_length - max([target_length1, target_length2]), _lcm(r, hparams.downsample_step))
 
                 # mel padding
                 self.assertAllEqual(np.zeros([max_target_length - target_length1, hparams.num_mels]),
