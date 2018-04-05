@@ -38,7 +38,7 @@ def train(hparams, model_dir, source_files, target_files):
 
         ).downsample_mel(
 
-        ).dataset.filter(lambda s, t: tf.less(tf.shape(t.mel)[1], hparams.max_positions)) # ToDo: remove this filter once downsampling mel spectrogram is implemented
+        ).dataset
         return batched
 
     run_config = tf.estimator.RunConfig(save_summary_steps=hparams.save_summary_steps, log_step_count_steps=hparams.log_step_count_steps)

@@ -19,7 +19,7 @@ hparams = tf.contrib.training.HParams(
     allow_clipping_in_normalization=False,
 
     # Model:
-    downsample_step=1,
+    downsample_step=4,
     outputs_per_step=1,
     embedding_weight_std=0.1,
     padding_idx=0,

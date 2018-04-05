@@ -84,7 +84,9 @@ class Frontend():
             mel.set_shape((None, self.hparams.num_mels))
 
             # done flag
-            done = tf.concat([tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32), tf.ones(1, dtype=tf.float32)], axis=0)
+            # if padding is needed, done length should be +1
+            done_tail_size = tf.cond(no_padding_condition, lambda: 1, lambda: 2)
+            done = tf.concat([tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32), tf.ones(done_tail_size, dtype=tf.float32)], axis=0)
             return _PreparedTargetData(target.id, spec, target.spec_width, mel, target.mel_width, target_length, done)
 
         return self._decode_target().map(lambda inputs: convert(inputs))
