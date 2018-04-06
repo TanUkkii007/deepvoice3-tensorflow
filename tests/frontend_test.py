@@ -67,12 +67,13 @@ class FrontendTest(tf.test.TestCase):
 
         frontend = Frontend(source, target, hparams)
 
-        batched = frontend.prepare().zip_source_and_target().group_by_batch().add_frame_positions().dataset
+        batched = frontend.prepare().zip_source_and_target().repeat(2).shuffle(
+            10).group_by_batch().add_frame_positions().dataset
 
         with self.test_session() as sess:
             iterator = batched.make_one_shot_iterator()
             next_element = iterator.get_next()
-            for _ in range(5):
+            for _ in range(10):
                 s, t = sess.run(next_element)
 
                 source_length = s.source_length
@@ -100,14 +101,15 @@ class FrontendTest(tf.test.TestCase):
                 target_length1 = t.target_length[0]
                 target_length2 = t.target_length[1]
                 max_target_length = len(t.mel[0])
-                max_target_length_without_padding = max([target_length1, target_length2])
+
                 self.assertEqual(len(t.mel[0]), len(t.spec[0]))
 
                 # max_target_length factor
                 self.assertEqual(0, max_target_length % r % hparams.downsample_step)
 
                 # minimum padding
-                self.assertLess(max_target_length - max([target_length1, target_length2]), _lcm(r, hparams.downsample_step))
+                self.assertLess(max_target_length - max([target_length1, target_length2]),
+                                _lcm(r, hparams.downsample_step))
 
                 # mel padding
                 self.assertAllEqual(np.zeros([max_target_length - target_length1, hparams.num_mels]),
@@ -122,17 +124,17 @@ class FrontendTest(tf.test.TestCase):
                                     t.spec[1][target_length2:])
 
                 # done
-                self.assertEqual(max_target_length_without_padding // r // hparams.downsample_step, len(t.done[0]))
-                self.assertEqual(max_target_length_without_padding // r // hparams.downsample_step, len(t.done[1]))
+                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.done[0]))
+                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.done[1]))
 
                 self.assertAllEqual(np.zeros(target_length1 // r // hparams.downsample_step - 1),
                                     t.done[0][:target_length1 // r // hparams.downsample_step - 1])
                 self.assertAllEqual(np.zeros(target_length2 // r // hparams.downsample_step - 1),
                                     t.done[1][:target_length2 // r // hparams.downsample_step - 1])
-                self.assertAllEqual(np.ones((max_target_length_without_padding // r // hparams.downsample_step) - (
+                self.assertAllEqual(np.ones((max_target_length // r // hparams.downsample_step) - (
                         target_length1 // r // hparams.downsample_step - 1)),
                                     t.done[0][target_length1 // r // hparams.downsample_step - 1:])
-                self.assertAllEqual(np.ones((max_target_length_without_padding // r // hparams.downsample_step) - (
+                self.assertAllEqual(np.ones((max_target_length // r // hparams.downsample_step) - (
                         target_length2 // r // hparams.downsample_step - 1)),
                                     t.done[1][target_length2 // r // hparams.downsample_step - 1:])
 

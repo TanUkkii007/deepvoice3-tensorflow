@@ -1,6 +1,7 @@
 import tensorflow as tf
 import collections
 import math
+from abc import abstractmethod
 from data import PreprocessedTargetData, PreprocessedSourceData
 from data.tfrecord_utils import parse_preprocessed_source_data, parse_preprocessed_target_data, \
     decode_preprocessed_source_data, decode_preprocessed_target_data
@@ -69,11 +70,13 @@ class Frontend():
 
             # spec and mel length must be multiple of outputs_per_step and downsample_step
             length_factor = _lcm(self.hparams.outputs_per_step, self.hparams.downsample_step)
+
             def padding_function(t):
                 padded_target_length = (target_length // length_factor + 1) * length_factor
                 tail_padding = padded_target_length - target_length
-                padding_shape = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[(0, 1)], values=tf.expand_dims(tail_padding, axis=0), dense_shape=(2, 2)))
-                return lambda :tf.pad(t, paddings=padding_shape)
+                padding_shape = tf.sparse_tensor_to_dense(
+                    tf.SparseTensor(indices=[(0, 1)], values=tf.expand_dims(tail_padding, axis=0), dense_shape=(2, 2)))
+                return lambda: tf.pad(t, paddings=padding_shape)
 
             no_padding_condition = tf.equal(tf.to_int64(0), target_length % length_factor)
 
@@ -86,7 +89,8 @@ class Frontend():
             # done flag
             # if padding is needed, done length should be +1
             done_tail_size = tf.cond(no_padding_condition, lambda: 1, lambda: 2)
-            done = tf.concat([tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32), tf.ones(done_tail_size, dtype=tf.float32)], axis=0)
+            done = tf.concat([tf.zeros(target_length // r // downsample_step - 1, dtype=tf.float32),
+                              tf.ones(done_tail_size, dtype=tf.float32)], axis=0)
             return _PreparedTargetData(target.id, spec, target.spec_width, mel, target.mel_width, target_length, done)
 
         return self._decode_target().map(lambda inputs: convert(inputs))
@@ -110,10 +114,44 @@ class _FrontendPreparedView():
         return _FrontendZippedView(zipped, self.hparams)
 
 
-class _FrontendZippedView():
+class FrontendZippedViewBase():
+
+    @property
+    @abstractmethod
+    def dataset(self):
+        raise NotImplementedError("dataset")
+
+    @property
+    @abstractmethod
+    def hparams(self):
+        raise NotImplementedError("hparams")
+
+    @abstractmethod
+    def apply(self, dataset, hparams):
+        raise NotImplementedError("apply")
+
+    def shuffle(self, buffer_size):
+        return self.apply(self.dataset.shuffle(buffer_size), self.hparams)
+
+    def repeat(self, count=None):
+        return self.apply(self.dataset.repeat(count), self.hparams)
+
+
+class _FrontendZippedView(FrontendZippedViewBase):
     def __init__(self, zipped: tf.data.Dataset, hparams):
-        self.dataset = zipped
-        self.hparams = hparams
+        self._dataset = zipped
+        self._hparams = hparams
+
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @property
+    def hparams(self):
+        return self._hparams
+
+    def apply(self, dataset, hparams):
+        return _FrontendZippedView(dataset, hparams)
 
     def group_by_batch(self):
         batch_size = self.hparams.batch_size
@@ -189,7 +227,8 @@ class _FrontendBatchedView():
 
         def convert(source, target):
             max_decoder_target_len = tf.shape(target.mel)[1] // r // downsample_step
-            frame_positions = tf.tile(tf.expand_dims(tf.range(1, max_decoder_target_len + 1), axis=0), [self.hparams.batch_size, 1])
+            frame_positions = tf.tile(tf.expand_dims(tf.range(1, max_decoder_target_len + 1), axis=0),
+                                      [self.hparams.batch_size, 1])
             return source, PreparedTargetData(
                 id=target.id,
                 spec=target.spec,
