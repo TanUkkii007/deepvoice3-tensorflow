@@ -7,7 +7,7 @@ from deepvoice3_tensorflow.frontend import Frontend, _lcm
 class FrontendTest(tf.test.TestCase):
 
     def test_preparation(self):
-        data_dir = "test_data"
+        data_dir = os.path.join(os.path.dirname(__file__), "test_data")
         source_files = [os.path.join(data_dir, "jsut-source-%05d.tfrecords" % i) for i in range(1, 11)]
         target_files = [os.path.join(data_dir, "jsut-target-%05d.tfrecords" % i) for i in range(1, 11)]
         source = tf.data.TFRecordDataset(source_files)
@@ -45,7 +45,7 @@ class FrontendTest(tf.test.TestCase):
                 # self.assertEqual(t.target_length, len(t.mel))
 
     def test_batch(self):
-        data_dir = "test_data"
+        data_dir = os.path.join(os.path.dirname(__file__), "test_data")
         source_files = [os.path.join(data_dir, "jsut-source-%05d.tfrecords" % i) for i in range(1, 11)]
         target_files = [os.path.join(data_dir, "jsut-target-%05d.tfrecords" % i) for i in range(1, 11)]
         source = tf.data.TFRecordDataset(source_files)

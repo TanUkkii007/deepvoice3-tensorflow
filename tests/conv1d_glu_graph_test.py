@@ -29,7 +29,7 @@ class Conv1dGLUTest(tf.test.TestCase):
             stddev=math.sqrt(4.0 / (float(kernel_size) * C)),
             seed=123)
         conv1dGLU = Conv1dGLU(C, 2 * C, kernel_size,
-                              dropout=0.0, dilation=dilation, residual=False,
+                              dropout=0.0, dilation=dilation,
                               kernel_initializer=kernel_initializer,
                               is_incremental=False)
         btc_pf = tf.placeholder(dtype=tf.float32, shape=[B, T, C])
@@ -43,7 +43,7 @@ class Conv1dGLUTest(tf.test.TestCase):
         input_buffer_pf = tf.placeholder(dtype=tf.float32, shape=[B, buffer_size, C])
 
         conv1dGLU_incremental = Conv1dGLU(C, 2 * C, kernel_size,
-                                          dropout=0.0, dilation=dilation, residual=False,
+                                          dropout=0.0, dilation=dilation,
                                           kernel_initializer=kernel_initializer,
                                           is_incremental=True)
         out_online, next_input_buffer = conv1dGLU_incremental.apply(btc_one_pf, input_buffer=input_buffer_pf)

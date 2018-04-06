@@ -8,8 +8,6 @@ from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism,
 from tensorflow.python.util import nest
 import tensorflow.contrib.eager as tfe
 
-tfe.enable_eager_execution()
-
 @composite
 def attention_tensors(draw, b_size=integers(1, 5), t_query_size=integers(2, 20), c_size=integers(1, 10),
                       t_encoder_size=integers(2, 10), embed_dim=integers(1, 10).filter(lambda x: x % 2 == 0),
@@ -207,4 +205,5 @@ class AttentionLayerTest(tf.test.TestCase):
 
 
 if __name__ == '__main__':
+    tfe.enable_eager_execution()
     tf.test.main()

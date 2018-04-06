@@ -9,7 +9,6 @@ from deepvoice3_tensorflow.modules import Conv1dGLU
 from deepvoice3_tensorflow.cnn_cell import MultiCNNCell
 import tensorflow.contrib.eager as tfe
 
-tfe.enable_eager_execution()
 
 @composite
 def btc_tensor(draw, b_size=integers(1, 5), t_size=integers(2, 20), c_size=integers(1, 10), elements=integers(-1, 1)):
@@ -37,7 +36,7 @@ class MultiCNNCellTest(tf.test.TestCase):
             half = length // 2
             return tf.constant_initializer(np.stack([0.1 * -1 * np.ones(half), 0.1 * np.ones(half)]).reshape(length, order='F'))
         conv1dGLU_cells = [Conv1dGLU(c, 2 + c, kernel_size,
-                                     dropout=1, dilation=dilation, residual=False,
+                                     dropout=1, dilation=dilation,
                                      kernel_initializer=one_tenth_initializer(c * 2*(c+2) * kernel_size),
                                      is_incremental=False) for c in [C, C + 2, C + 4]]
 
@@ -50,7 +49,7 @@ class MultiCNNCellTest(tf.test.TestCase):
         #     out = sess.run(out)
 
         conv1dGLU_incremental_cells = [Conv1dGLU(c, 2 + c, kernel_size,
-                                                 dropout=1, dilation=dilation, residual=False,
+                                                 dropout=1, dilation=dilation,
                                                  kernel_initializer=one_tenth_initializer(c * 2*(c+2) * kernel_size),
                                                  is_incremental=True) for c in [C, C + 2, C + 4]]
         multiConv1dGLU_incremental = MultiCNNCell(conv1dGLU_incremental_cells, is_incremental=True)
@@ -78,3 +77,8 @@ class MultiCNNCellTest(tf.test.TestCase):
         #     out_online = sess.run(out_online)
 
         self.assertAllClose(out, out_online)
+
+
+if __name__ == '__main__':
+    tfe.enable_eager_execution()
+    tf.test.main()
