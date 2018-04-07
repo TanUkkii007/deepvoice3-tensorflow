@@ -32,6 +32,10 @@ def train(hparams, model_dir, source_files, target_files):
 
         ).zip_source_and_target(
 
+        ).repeat(
+
+        ).shuffle(
+            buffer_size=hparams.batch_size*10
         ).group_by_batch(
 
         ).add_frame_positions(

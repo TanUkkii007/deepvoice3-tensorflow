@@ -1,5 +1,7 @@
 import tensorflow as tf
 from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, DecoderPreNetCNNArgs, MultiHopAttentionArgs
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from matplotlib import cm
 import numpy as np
