@@ -4,7 +4,6 @@ from hypothesis import given, settings, unlimited, assume, HealthCheck
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
 from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPreNetCNNArgs
-import tensorflow.contrib.eager as tfe
 
 even_number = lambda x: x % 2 == 0
 
@@ -171,5 +170,5 @@ class DecoderTest(tf.test.TestCase):
         print("-" * 100)
 
 if __name__ == '__main__':
-    tfe.enable_eager_execution()
+    tf.enable_eager_execution()
     tf.test.main()

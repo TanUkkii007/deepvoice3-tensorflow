@@ -6,7 +6,6 @@ from hypothesis.extra.numpy import arrays
 from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer, CNNAttentionWrapper, \
     MultiHopAttention, MultiHopAttentionArgs, CNNAttentionWrapperInput
 from tensorflow.python.util import nest
-import tensorflow.contrib.eager as tfe
 
 @composite
 def attention_tensors(draw, b_size=integers(1, 5), t_query_size=integers(2, 20), c_size=integers(1, 10),
@@ -205,5 +204,5 @@ class AttentionLayerTest(tf.test.TestCase):
 
 
 if __name__ == '__main__':
-    tfe.enable_eager_execution()
+    tf.enable_eager_execution()
     tf.test.main()

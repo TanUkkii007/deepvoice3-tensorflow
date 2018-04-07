@@ -7,7 +7,6 @@ from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
 from deepvoice3_tensorflow.modules import Conv1dGLU
 from deepvoice3_tensorflow.cnn_cell import MultiCNNCell
-import tensorflow.contrib.eager as tfe
 
 
 @composite
@@ -80,5 +79,5 @@ class MultiCNNCellTest(tf.test.TestCase):
 
 
 if __name__ == '__main__':
-    tfe.enable_eager_execution()
+    tf.enable_eager_execution()
     tf.test.main()

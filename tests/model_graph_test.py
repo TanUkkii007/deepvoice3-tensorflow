@@ -14,7 +14,7 @@ class ModelTest(tf.test.TestCase):
         hparams = tf.contrib.training.HParams(
             num_mels=80,
             fft_size=1024,
-            downsample_step=1,  # ToDo: This test fails when downsample_step > 1
+            downsample_step=4,
             outputs_per_step=r,
 
             max_positions=512,
