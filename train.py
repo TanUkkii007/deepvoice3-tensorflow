@@ -38,6 +38,8 @@ def train(hparams, model_dir, source_files, target_files):
             buffer_size=hparams.batch_size*10
         ).group_by_batch(
 
+        ).swap_source_random(
+            swap_probability=hparams.replace_pronunciation_prob
         ).add_frame_positions(
 
         ).downsample_mel(

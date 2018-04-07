@@ -114,7 +114,7 @@ class _FrontendPreparedView():
         return _FrontendZippedView(zipped, self.hparams)
 
 
-class FrontendZippedViewBase():
+class FrontendZippedViewBase:
 
     @property
     @abstractmethod
@@ -135,6 +135,31 @@ class FrontendZippedViewBase():
 
     def repeat(self, count=None):
         return self.apply(self.dataset.repeat(count), self.hparams)
+
+    def swap_source_random(self, swap_probability):
+        def convert(s: PreparedSourceData, t):
+            r = tf.random_uniform(shape=(), minval=0, maxval=1)
+            def s1():
+                return s.text, s.source, s.source_length, s.text_positions
+            def s2():
+                return s.text2, s.source2, s.source_length2, s.text_positions2
+            condition = r > swap_probability
+            text, source, source_length, text_positions = tf.cond(condition, s1, s2)
+            text2, source2, source_length2, text_positions2 = tf.cond(condition, s2, s1)
+
+            return PreparedSourceData(
+                id=s.id,
+                text=text,
+                source=source,
+                source_length=source_length,
+                text_positions=text_positions,
+                text2=text2,
+                source2=source2,
+                source_length2=source_length2,
+                text_positions2=text_positions2,
+            ), t
+
+        return self.apply(self.dataset.map(lambda x, y: convert(x, y)), self.hparams)
 
 
 class _FrontendZippedView(FrontendZippedViewBase):
@@ -216,10 +241,21 @@ class _FrontendZippedView(FrontendZippedViewBase):
         return _FrontendBatchedView(batched, self.hparams)
 
 
-class _FrontendBatchedView():
+class _FrontendBatchedView(FrontendZippedViewBase):
     def __init__(self, batched: tf.data.Dataset, hparams):
-        self.dataset = batched
-        self.hparams = hparams
+        self._dataset = batched
+        self._hparams = hparams
+
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @property
+    def hparams(self):
+        return self._hparams
+
+    def apply(self, dataset, hparams):
+        return _FrontendBatchedView(dataset, hparams)
 
     def add_frame_positions(self):
         r = self.hparams.outputs_per_step
@@ -244,10 +280,21 @@ class _FrontendBatchedView():
         return _FrontendBatchedViewWithFramePositions(converted, self.hparams)
 
 
-class _FrontendBatchedViewWithFramePositions():
+class _FrontendBatchedViewWithFramePositions(FrontendZippedViewBase):
     def __init__(self, batched: tf.data.Dataset, hparams):
-        self.dataset = batched
-        self.hparams = hparams
+        self._dataset = batched
+        self._hparams = hparams
+
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @property
+    def hparams(self):
+        return self._hparams
+
+    def apply(self, dataset, hparams):
+        return _FrontendBatchedViewWithFramePositions(dataset, hparams)
 
     def downsample_mel(self):
         def convert(source, target):

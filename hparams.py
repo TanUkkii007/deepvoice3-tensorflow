@@ -4,6 +4,9 @@ import tensorflow as tf
 hparams = tf.contrib.training.HParams(
     name="deepvoice3",
 
+    # Text
+    replace_pronunciation_prob=0.5,
+
     # Audio
     num_mels=80,
     fmin=125,

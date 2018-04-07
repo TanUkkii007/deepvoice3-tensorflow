@@ -26,7 +26,7 @@ class FrontendTest(tf.test.TestCase):
 
         frontend = Frontend(source, target, hparams)
 
-        zipped = frontend.prepare().zip_source_and_target().dataset
+        zipped = frontend.prepare().zip_source_and_target().swap_source_random(0.5).dataset
 
         with self.test_session() as sess:
             iterator = zipped.make_one_shot_iterator()
