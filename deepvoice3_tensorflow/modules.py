@@ -67,16 +67,17 @@ class SinusoidalEncodingEmbedding(tf.layers.Layer):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         self.initial_pe = PositionalEncoding.initial_value(self.num_embeddings, self.embedding_dim, position_rate=1.0)
+        self.trainable = trainable
 
     def build(self, input_shape):
         initializer = lambda shape, dtype, partition_info: self.initial_pe.value
         self.weight = self.add_variable("weight", shape=self.initial_pe.shape, dtype=tf.float32,
-                                        initializer=initializer)
+                                        initializer=initializer, trainable=self.trainable)
         self.built = True
 
-    def call(self, x, w=1.0):
+    def call(self, positions, w=1.0):
         encoded = PositionalEncoding(self.weight, self.num_embeddings, self.embedding_dim).sinusoidal_encode(w)
-        return tf.nn.embedding_lookup(encoded.value, x)
+        return tf.nn.embedding_lookup(encoded.value, positions)
 
 
 class Conv1d(CNNCell):
