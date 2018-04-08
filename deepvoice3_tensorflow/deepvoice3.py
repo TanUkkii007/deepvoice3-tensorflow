@@ -552,7 +552,8 @@ class Decoder(tf.layers.Layer):
         outputs = tf.sigmoid(x)
 
         # Done flag
-        done = tf.sigmoid(self.fc(x))
+        # We need logits to compute loss with tf.losses.sigmoid_cross_entropy. No need to apply sigmoid here.
+        done = self.fc(x)
         return outputs, done, alignments
 
     def _call_incremental(self, encoder_out, text_positions, test_inputs=None):
