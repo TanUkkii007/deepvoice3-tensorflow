@@ -44,6 +44,11 @@ class Encoder(tf.layers.Layer):
         values = (keys + input_embedding) + math.sqrt(0.5)
         return keys, values
 
+    def register_metrics(self):
+        self.embed_tokens.register_metrics()
+        for c in self.convolutions:
+            c.register_metrics()
+
 
 class ScaledDotProductAttentionMechanism(AttentionMechanism):
     def __init__(self, keys, values, embed_dim, window_ahead=3, window_backward=1, dropout=0.1, use_key_projection=True,
@@ -59,18 +64,20 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         :param use_key_projection:
         :param use_value_projection:
         '''
+        self.use_key_projection = use_key_projection
         if use_key_projection:
-            key_projection = Linear(embed_dim, embed_dim, dropout=dropout,
+            self.key_projection = Linear(embed_dim, embed_dim, dropout=dropout,
                                     weight_initializer=key_projection_weight_initializer,
                                     bias_initializer=key_projection_bias_initializer, name="key_projection")
-            self._keys = key_projection(keys)
+            self._keys = self.key_projection(keys)
         else:
             self._keys = keys
+        self.use_value_projection = use_value_projection
         if use_value_projection:
-            value_projection = Linear(embed_dim, embed_dim, dropout=dropout,
+            self.value_projection = Linear(embed_dim, embed_dim, dropout=dropout,
                                       weight_initializer=value_projection_weight_initializer,
                                       bias_initializer=value_projection_bias_initializer, name="value_projection")
-            self._values = value_projection(values)
+            self._values = self.value_projection(values)
         else:
             self._values = values
 
@@ -133,6 +140,12 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         x = x * (s * tf.sqrt(1.0 / s))
         return x, alignment_scores
 
+    def register_metrics(self):
+        if self.use_key_projection:
+            self.key_projection.register_metrics()
+        if self.use_value_projection:
+            self.value_projection.register_metrics()
+
     def _mask(self, target, mask, last_attended):
         if mask is None or last_attended is None:
             return target
@@ -183,6 +196,11 @@ class AttentionLayer(tf.layers.Layer):
         x = self.out_projection(x)
         x = (x + residual) * math.sqrt(0.5)
         return x, alignment_scores
+
+    def register_metrics(self):
+        self.query_projection.register_metrics()
+        self.out_projection.register_metrics()
+        self.attention_mechanism.register_metrics()
 
 
 CNNAttentionWrapperState = namedtuple("CNNAttentionWrapperState",
@@ -279,6 +297,10 @@ class CNNAttentionWrapper(CNNCell):
                                                                                                attention_scores,
                                                                                                alignment_history)
 
+    def register_metrics(self):
+        self.convolution.register_metrics()
+        self.attention.register_metrics()
+
 
 MultiHopAttentionArgs = namedtuple("MultiHopAttentionArgs", ["out_channels", "kernel_size", "dilation", "dropout"])
 
@@ -301,6 +323,7 @@ class MultiHopAttention(CNNCell):
                                      training)
             next_in_channels = aw.output_size
             cells.append(aw)
+        self._layers = cells
         self.layer = MultiCNNCell(cells, is_incremental)
         self._is_incremental = is_incremental
 
@@ -333,6 +356,10 @@ class MultiHopAttention(CNNCell):
     def average_alignment(states):
         return sum([state.alignments for state in states]) / len(states)
 
+    def register_metrics(self):
+        for c in self._layers:
+            c.register_metrics()
+
 
 class DecoderPreNetCNNArgs(namedtuple("DecoderPreNetCNNArgs", ["out_channels", "kernel_size", "dilation"])):
     pass
@@ -357,6 +384,7 @@ class DecoderPreNetCNN(CNNCell):
             layers.append(conv)
             in_channels = conv.out_channels
 
+        self._layers = layers
         self.layer = MultiCNNCell(layers, is_incremental)
 
         self._is_incremental = is_incremental
@@ -381,6 +409,10 @@ class DecoderPreNetCNN(CNNCell):
 
     def call(self, inputs, **kwargs):
         return self.layer(inputs, **kwargs)
+
+    def register_metrics(self):
+        for c in self._layers:
+            c.register_metrics()
 
 
 class Decoder(tf.layers.Layer):
@@ -414,6 +446,7 @@ class Decoder(tf.layers.Layer):
         self.in_dim = in_dim
         self.r = r
         self.training = training
+        self._collect_metrics = False
 
         self.query_position_rate = query_position_rate
         self.key_position_rate = key_position_rate
@@ -505,6 +538,8 @@ class Decoder(tf.layers.Layer):
                                          query_projection_weight_initializer=self.attention_query_projection_weight_initializer,
                                          out_projection_weight_initializer=self.attention_out_projection_weight_initializer,
                                          training=self.training)
+        if self._collect_metrics:
+            mp_attention.register_metrics()
 
         x, alignments = mp_attention(CNNAttentionWrapperInput(x, frame_pos_embed),
                                      mp_attention.zero_state(inputs.shape[0].value, inputs.dtype)) # ToDo: does not work when batch size is None
@@ -613,3 +648,11 @@ class Decoder(tf.layers.Layer):
     def append_unused_final_test_input(self, test_input, batch_size):
         final_input = tf.zeros(shape=(batch_size, 1, self.in_dim * self.r))
         return tf.concat([test_input, final_input], axis=1)
+
+    def register_metrics(self):
+        self._collect_metrics = True
+        self.embed_key_positions.register_metrics()
+        self.embed_query_positions.register_metrics()
+        self.preattention.register_metrics()
+        self.fc.register_metrics()
+        self.last_conv.register_metrics()

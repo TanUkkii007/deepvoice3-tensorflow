@@ -116,6 +116,7 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 summary_writer = tf.summary.FileWriter(model_dir)
                 alignment_saver = AlignmentSaver(alignments, global_step, params.alignment_save_steps,
                                                  "alignment_layer", summary_writer)
+                add_stats(encoder, decoder, mel_loss, done_loss)
                 return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[alignment_saver])
 
         def spec_loss(y_hat, y, priority_bin=None, priority_w=0):
@@ -130,6 +131,14 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
 
         def binary_loss(done_hat, done):
             return tf.losses.sigmoid_cross_entropy(done, tf.squeeze(done_hat, axis=-1))
+
+        def add_stats(encoder, decoder, mel_loss, done_loss):
+            tf.summary.scalar("mel_loss", mel_loss)
+            tf.summary.scalar("done_loss", done_loss)
+            encoder.register_metrics()
+            decoder.register_metrics()
+            return tf.summary.merge_all()
+
 
         super(SingleSpeakerTTSModel, self).__init__(
             model_fn=model_fn, model_dir=model_dir, config=config,

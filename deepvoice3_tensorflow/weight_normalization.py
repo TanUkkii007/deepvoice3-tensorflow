@@ -2,7 +2,7 @@ import tensorflow as tf
 
 
 class WeightNormalization(tf.layers.Layer):
-    def __init__(self, weight, dimension, trainable=True, name=None, **kwargs):
+    def __init__(self, weight, dimension=0, trainable=True, name=None, **kwargs):
         super(WeightNormalization, self).__init__(
             trainable=trainable, name=name, **kwargs)
         self.weight_value = weight.initialized_value()
@@ -41,6 +41,10 @@ class WeightNormalization(tf.layers.Layer):
 
     def _unwrap_if_rank0(self, r):
         return r[0] if len(r) == 1 else r
+
+    def register_metrics(self):
+        tf.summary.histogram(self.g.name, self.g)
+        tf.summary.histogram(self.v.name, self.v)
 
 def weight_normalization(weight, dimension=0):
     wn = WeightNormalization(weight, dimension)

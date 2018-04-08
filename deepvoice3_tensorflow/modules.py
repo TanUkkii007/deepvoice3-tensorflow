@@ -1,6 +1,6 @@
 import tensorflow as tf
 from .ops import causal_conv, noncausal_conv, Conv1dIncremental
-from .weight_normalization import weight_normalization
+from .weight_normalization import WeightNormalization
 from .cnn_cell import CNNCell
 from .positional_concoding import PositionalEncoding
 import math
@@ -27,7 +27,8 @@ class Linear(tf.layers.Layer):
             weight = self.add_variable("weight", shape=(self.in_features, self.out_features),
                                        initializer=self.weight_initializer,
                                        trainable=False)
-            self.normalized_weight = weight_normalization(weight)
+            self._wn = WeightNormalization(weight)
+            self.normalized_weight = self._wn(weight)
             self.bias = self.add_variable("bias", shape=(self.out_features), initializer=self.bias_initializer)
             self.built = True
 
@@ -36,6 +37,9 @@ class Linear(tf.layers.Layer):
             return tf.matmul(inputs, self.normalized_weight) + self.bias
         else:
             return tf.einsum("btc,ce->bte", inputs, self.normalized_weight)
+
+    def register_metrics(self):
+        self._wn.register_metrics()
 
 
 class Embedding(tf.layers.Layer):
@@ -54,11 +58,15 @@ class Embedding(tf.layers.Layer):
                                    dtype=tf.float32,
                                    initializer=self.weight_initializer,
                                    trainable=False)
-        self.normalized_weight = weight_normalization(weight)
+        self._wn = WeightNormalization(weight)
+        self.normalized_weight = self._wn(weight)
         self.built = True
 
     def call(self, inputs, **kwargs):
         return tf.nn.embedding_lookup(self.normalized_weight, inputs)
+
+    def register_metrics(self):
+        self._wn.register_metrics()
 
 
 class SinusoidalEncodingEmbedding(tf.layers.Layer):
@@ -78,6 +86,9 @@ class SinusoidalEncodingEmbedding(tf.layers.Layer):
     def call(self, positions, w=1.0):
         encoded = PositionalEncoding(self.weight, self.num_embeddings, self.embedding_dim).sinusoidal_encode(w)
         return tf.nn.embedding_lookup(encoded.value, positions)
+
+    def register_metrics(self):
+        tf.summary.histogram(self.weight.name, self.weight)
 
 
 class Conv1d(CNNCell):
@@ -135,7 +146,8 @@ class Conv1d(CNNCell):
                                         initializer=kernel_initializer,
                                         trainable=kernel_trainability)
         if self.normalize_weight:
-            self.kernel = weight_normalization(self.kernel)
+            self._wn = WeightNormalization(self.kernel)
+            self.kernel = self._wn(self.kernel)
         bias_initializer = tf.zeros_initializer() if self.bias_initializer is None else self.bias_initializer
         self.bias = self.add_variable("bias",
                                       shape=(1, 1, out_channels),
@@ -165,6 +177,10 @@ class Conv1d(CNNCell):
             return ha, next_input_buffer
         else:
             return ha
+
+    def register_metrics(self):
+        if self.normalize_weight:
+            self._wn.register_metrics()
 
 
 class NonCausalConv1d(tf.layers.Layer):
@@ -198,7 +214,8 @@ class NonCausalConv1d(tf.layers.Layer):
                                         initializer=kernel_initializer,
                                         trainable=kernel_trainability)
         if self.normalize_weight:
-            self.kernel = weight_normalization(self.kernel)
+            self._wn = WeightNormalization(self.kernel)
+            self.kernel = self._wn(self.kernel)
         bias_initializer = tf.zeros_initializer() if self.bias_initializer is None else self.bias_initializer
         self.bias = self.add_variable("bias",
                                       shape=(1, 1, out_channels),
@@ -210,6 +227,10 @@ class NonCausalConv1d(tf.layers.Layer):
         ha = self.activation(conv1d_output + self.bias) if self.activation is not None else (
                 conv1d_output + self.bias)
         return ha
+
+    def register_metrics(self):
+        if self.normalize_weight:
+            self._wn.register_metrics()
 
 
 class Conv1dGLU(CNNCell):
@@ -284,6 +305,9 @@ class Conv1dGLU(CNNCell):
     def zero_state(self, batch_size, dtype):
         return self.convolution.zero_state(batch_size, dtype)
 
+    def register_metrics(self):
+        self.convolution.register_metrics()
+
 
 class NonCausalConv1dGLU(tf.layers.Layer):
     """(Dilated) Conv1d + Gated linear unit + (optionally) speaker embedding
@@ -337,3 +361,6 @@ class NonCausalConv1dGLU(tf.layers.Layer):
         # to preserve variance after residual connection, scale by \sqrt{0.5}
         output = (x + residual) * math.sqrt(0.5)
         return output
+
+    def register_metrics(self):
+        self.convolution.register_metrics()
