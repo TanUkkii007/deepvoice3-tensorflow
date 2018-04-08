@@ -52,11 +52,11 @@ hparams = tf.contrib.training.HParams(
     approx_min_target_length = 200,
     batch_bucket_width = 20,
     batch_num_buckets = 20,
-    initial_learning_rate=5e-4,  # 0.001,
+    initial_learning_rate=1e-4,  # 0.0001,
     adam_beta1=0.5,
     adam_beta2=0.9,
     adam_eps=1e-6,
-    save_summary_steps=10,
+    save_summary_steps=50,
     log_step_count_steps=1,
     alignment_save_steps=50,
     )
