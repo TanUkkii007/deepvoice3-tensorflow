@@ -12,6 +12,11 @@ class PreparedSourceData(collections.namedtuple("PreparedSourceData",
                                                  "text2", "source2", "source_length2", "text_positions2"])):
     pass
 
+class PreparedSourceDataWithMask(collections.namedtuple("PreparedSourceData",
+                                                ["id", "text", "source", "source_length", "text_positions", "mask",
+                                                 "text2", "source2", "source_length2", "text_positions2", "mask2"])):
+    pass
+
 
 class _PreparedTargetData(
     collections.namedtuple("PreparedTargetData",
@@ -241,7 +246,36 @@ class _FrontendZippedView(FrontendZippedViewBase):
         return _FrontendBatchedView(batched, self.hparams)
 
 
-class _FrontendBatchedView(FrontendZippedViewBase):
+class _FrontendBatchedViewBase(FrontendZippedViewBase):
+    def add_memory_mask(self):
+        def convert(s: PreparedSourceData, t):
+            mask_value = -1e9
+
+            def to_float_mask(mask):
+                return tf.to_float(tf.logical_not(mask)) * mask_value
+
+            s1_mask = to_float_mask(tf.sequence_mask(s.source_length, tf.shape(s.source)[1]))
+            s2_mask = to_float_mask(tf.sequence_mask(s.source_length2, tf.shape(s.source2)[1]))
+
+            return PreparedSourceDataWithMask(
+                id=s.id,
+                text=s.text,
+                source=s.source,
+                source_length=s.source_length,
+                mask=s1_mask,
+                text_positions=s.text_positions,
+                text2=s.text2,
+                source2=s.source2,
+                source_length2=s.source_length2,
+                text_positions2=s.text_positions2,
+                mask2=s2_mask,
+            ), t
+
+        converted = self.dataset.map(lambda x, y: convert(x, y))
+        return self.apply(converted, self.hparams)
+
+
+class _FrontendBatchedView(_FrontendBatchedViewBase):
     def __init__(self, batched: tf.data.Dataset, hparams):
         self._dataset = batched
         self._hparams = hparams
@@ -280,7 +314,7 @@ class _FrontendBatchedView(FrontendZippedViewBase):
         return _FrontendBatchedViewWithFramePositions(converted, self.hparams)
 
 
-class _FrontendBatchedViewWithFramePositions(FrontendZippedViewBase):
+class _FrontendBatchedViewWithFramePositions(_FrontendBatchedViewBase):
     def __init__(self, batched: tf.data.Dataset, hparams):
         self._dataset = batched
         self._hparams = hparams

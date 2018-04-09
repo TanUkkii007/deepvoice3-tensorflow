@@ -40,6 +40,8 @@ def train(hparams, model_dir, source_files, target_files):
 
         ).swap_source_random(
             swap_probability=hparams.replace_pronunciation_prob
+        ).add_memory_mask(
+
         ).add_frame_positions(
 
         ).downsample_mel(

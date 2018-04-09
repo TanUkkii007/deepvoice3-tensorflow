@@ -68,7 +68,7 @@ class FrontendTest(tf.test.TestCase):
         frontend = Frontend(source, target, hparams)
 
         batched = frontend.prepare().zip_source_and_target().repeat(2).shuffle(
-            10).group_by_batch().add_frame_positions().dataset
+            10).group_by_batch().add_frame_positions().add_memory_mask().dataset
 
         with self.test_session() as sess:
             iterator = batched.make_one_shot_iterator()
@@ -97,6 +97,23 @@ class FrontendTest(tf.test.TestCase):
                                     s.text_positions2[0][source_length2[0]:])
                 self.assertAllEqual(np.zeros(max_source_length2 - source_length2[1]),
                                     s.text_positions2[1][source_length2[1]:])
+
+                # memory_mask
+                self.assertEqual(max_source_length, len(s.mask[0]))
+                self.assertEqual(max_source_length2, len(s.mask2[0]))
+                self.assertAllEqual(np.zeros(s.source_length[0]), s.mask[0][:s.source_length[0]])
+                self.assertAllEqual(np.zeros(s.source_length[1]), s.mask[1][:s.source_length[1]])
+                self.assertAllEqual(np.repeat(-1e9, max_source_length - s.source_length[0]),
+                                    s.mask[0][s.source_length[0]:])
+                self.assertAllEqual(np.repeat(-1e9, max_source_length - s.source_length[1]),
+                                    s.mask[1][s.source_length[1]:])
+
+                self.assertAllEqual(np.zeros(s.source_length2[0]), s.mask[0][:s.source_length2[0]])
+                self.assertAllEqual(np.zeros(s.source_length2[1]), s.mask[1][:s.source_length2[1]])
+                self.assertAllEqual(np.repeat(-1e9, max_source_length2 - s.source_length2[0]),
+                                    s.mask[0][s.source_length2[0]:])
+                self.assertAllEqual(np.repeat(-1e9, max_source_length2 - s.source_length2[1]),
+                                    s.mask[1][s.source_length2[1]:])
 
                 target_length1 = t.target_length[0]
                 target_length2 = t.target_length[1]

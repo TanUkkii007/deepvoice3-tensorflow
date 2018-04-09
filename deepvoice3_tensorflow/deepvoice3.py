@@ -67,16 +67,16 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         self.use_key_projection = use_key_projection
         if use_key_projection:
             self.key_projection = Linear(embed_dim, embed_dim, dropout=dropout,
-                                    weight_initializer=key_projection_weight_initializer,
-                                    bias_initializer=key_projection_bias_initializer, name="key_projection")
+                                         weight_initializer=key_projection_weight_initializer,
+                                         bias_initializer=key_projection_bias_initializer, name="key_projection")
             self._keys = self.key_projection(keys)
         else:
             self._keys = keys
         self.use_value_projection = use_value_projection
         if use_value_projection:
             self.value_projection = Linear(embed_dim, embed_dim, dropout=dropout,
-                                      weight_initializer=value_projection_weight_initializer,
-                                      bias_initializer=value_projection_bias_initializer, name="value_projection")
+                                           weight_initializer=value_projection_weight_initializer,
+                                           bias_initializer=value_projection_bias_initializer, name="value_projection")
             self._values = self.value_projection(values)
         else:
             self._values = values
@@ -109,23 +109,20 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         size = tf.stack([batch_size, target_length, max_time], axis=0)
         return tf.zeros(size, dtype=dtype)
 
-    # ToDo: use previous_alignments to calculate mask
-    def __call__(self, query, previous_alignments=None, mask=None, last_attended=None):
+    def __call__(self, query, memory_mask=None):
         '''
         :param query: (B, T//r, embed_dim)
-        :param previous_alignments:
-        :param mask:
-        :param last_attended:
+        :param mask: (B, T_memory)
         :return:
         '''
 
         # Q K^\top
         x = tf.matmul(query, self.keys, transpose_b=True)
 
-        x = self._mask(x, mask, last_attended)
+        x = self._mask(x, memory_mask)
 
         # softmax over last dim
-        # (B, tgt_len, src_len)
+        # (B, T_query, T_memory)
         shape = tf.shape(x)
         x = tf.nn.softmax(tf.reshape(x, shape=[shape[0] * shape[1], shape[2]]), axis=1)
         x = tf.reshape(x, shape=shape)
@@ -146,21 +143,12 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         if self.use_value_projection:
             self.value_projection.register_metrics()
 
-    def _mask(self, target, mask, last_attended):
-        if mask is None or last_attended is None:
-            return target
-        mask_shape = (target.shape[0].value, 1, -1)
-        mask_value = -float("inf")
-        mask = tf.reshape(mask, shape=mask_shape)
-        mask = mask * mask_value
-        backward = last_attended - self.window_backward
-        if backward > 0:
-            target[:, :, :backward] = mask
-        ahead = last_attended + self.window_ahead
-        if ahead < target.shape[1].value:
-            target[:, :, ahead:] = mask
-
-        return target
+    def _mask(self, qk, memory_mask):
+        if memory_mask is None:
+            return qk
+        # reshape mask to (B, 1, T_memory) to broadcast
+        mask = tf.expand_dims(memory_mask, axis=1)
+        return qk + mask
 
 
 class AttentionLayer(tf.layers.Layer):
@@ -183,14 +171,14 @@ class AttentionLayer(tf.layers.Layer):
         self.out_projection = Linear(embed_dim, conv_channels, dropout=self.dropout,
                                      weight_initializer=self.out_projection_weight_initializer, name="out_projection")
 
-    def call(self, query, mask=None, last_attended=None):
+    def call(self, query, memory_mask=None):
         residual = query
 
         # attention
         # (B, T//r, embed_dim)
         x = self.query_projection(query)
 
-        x, alignment_scores = self.attention_mechanism(x)
+        x, alignment_scores = self.attention_mechanism(x, memory_mask=memory_mask)
 
         # project back
         x = self.out_projection(x)
@@ -211,7 +199,7 @@ CNNAttentionWrapperInput = namedtuple("CNNAttentionWrapperInput", ["query", "fra
 
 class CNNAttentionWrapper(CNNCell):
     def __init__(self, attention_mechanism, in_channels, out_channels, kernel_size, dilation, dropout,
-                 is_incremental, r, kernel_initializer=None, query_projection_weight_initializer=None,
+                 is_incremental, r, memory_mask=None, kernel_initializer=None, query_projection_weight_initializer=None,
                  out_projection_weight_initializer=None,
                  training=False,
                  trainable=True,
@@ -231,6 +219,7 @@ class CNNAttentionWrapper(CNNCell):
         self._is_incremental = is_incremental
         self._output_size = out_channels
         self.r = r
+        self.memory_mask = memory_mask
 
     @property
     def is_incremental(self):
@@ -281,9 +270,7 @@ class CNNAttentionWrapper(CNNCell):
 
         query = query if frame_pos_embed is None else query + frame_pos_embed
 
-        # ToDo: properly set mask and last_attended
-        output, attention_scores = self.attention(query, mask=None,
-                                                  last_attended=None)
+        output, attention_scores = self.attention(query, memory_mask=self.memory_mask)
         alignment_history = state.alignment_history.write(state.time, attention_scores)
         output = (output + residual) * math.sqrt(0.5)
         if self.is_incremental:
@@ -307,7 +294,7 @@ MultiHopAttentionArgs = namedtuple("MultiHopAttentionArgs", ["out_channels", "ke
 
 class MultiHopAttention(CNNCell):
     def __init__(self, attention_mechanism, in_channels, convolutions, r, is_incremental,
-                 kernel_initializer=None, query_projection_weight_initializer=None,
+                 memory_mask=None, kernel_initializer=None, query_projection_weight_initializer=None,
                  out_projection_weight_initializer=None,
                  training=False,
                  trainable=True,
@@ -317,7 +304,7 @@ class MultiHopAttention(CNNCell):
         next_in_channels = in_channels
         for i, (out_channels, kernel_size, dilation, dropout) in enumerate(convolutions):
             aw = CNNAttentionWrapper(attention_mechanism, next_in_channels, out_channels, kernel_size,
-                                     dilation, dropout, is_incremental, r, kernel_initializer,
+                                     dilation, dropout, is_incremental, r, memory_mask, kernel_initializer,
                                      query_projection_weight_initializer,
                                      out_projection_weight_initializer,
                                      training)
@@ -494,13 +481,15 @@ class Decoder(tf.layers.Layer):
     def build(self, input_shape):
         pass
 
-    def call(self, encoder_out, input=None, text_positions=None, frame_positions=None, test_inputs=None):
+    def call(self, encoder_out, input=None, text_positions=None, frame_positions=None, test_inputs=None,
+             memory_mask=None):
         if self.is_incremental:
             return self._call_incremental(encoder_out, text_positions, test_inputs)
         else:
-            return self._call(encoder_out, input, text_positions=text_positions, frame_positions=frame_positions)
+            return self._call(encoder_out, input, text_positions=text_positions, frame_positions=frame_positions,
+                              memory_mask=memory_mask)
 
-    def _call(self, encoder_out, inputs, text_positions=None, frame_positions=None):
+    def _call(self, encoder_out, inputs, text_positions=None, frame_positions=None, memory_mask=None):
         if inputs.shape[-1].value == self.in_dim:
             original_shape = inputs.shape
             s = tf.shape(inputs)
@@ -532,8 +521,10 @@ class Decoder(tf.layers.Layer):
                                                                  value_projection_weight_initializer=self.attention_value_projection_weight_initializer,
                                                                  value_projection_bias_initializer=self.attention_value_projection_bias_initializer,
                                                                  training=self.training)
+        memory_mask = memory_mask if self.use_memory_mask else None
         mp_attention = MultiHopAttention(attention_mechanism, self.preattention.output_size,
                                          self.mh_attentions, self.r, self.is_incremental,
+                                         memory_mask=memory_mask,
                                          kernel_initializer=self.attention_kernel_initializer,
                                          query_projection_weight_initializer=self.attention_query_projection_weight_initializer,
                                          out_projection_weight_initializer=self.attention_out_projection_weight_initializer,
@@ -542,9 +533,8 @@ class Decoder(tf.layers.Layer):
             mp_attention.register_metrics()
 
         x, alignments = mp_attention(CNNAttentionWrapperInput(x, frame_pos_embed),
-                                     mp_attention.zero_state(inputs.shape[0].value, inputs.dtype)) # ToDo: does not work when batch size is None
-
-        # decoder_states = tf.transpose(x)
+                                     mp_attention.zero_state(inputs.shape[0].value,
+                                                             inputs.dtype))  # ToDo: does not work when batch size is None
 
         x = self.last_conv(x.query)
 

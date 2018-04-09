@@ -99,7 +99,8 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             keys, values = encoder(features.source, text_positions=features.text_positions)
             mel_outputs, done_hat, attention_states = decoder((keys, values), input=labels.mel,
                                                               frame_positions=labels.frame_positions,
-                                                              text_positions=features.text_positions)
+                                                              text_positions=features.text_positions,
+                                                              memory_mask=features.mask)
 
             # undo reduction
             mel_outputs = tf.reshape(mel_outputs, shape=(params.batch_size, -1, params.num_mels))
