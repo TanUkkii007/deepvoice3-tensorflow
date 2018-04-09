@@ -1,10 +1,9 @@
 import tensorflow as tf
 from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, DecoderPreNetCNNArgs, MultiHopAttentionArgs
 import matplotlib
+
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from matplotlib import cm
-import numpy as np
 import os
 
 
@@ -37,21 +36,22 @@ class AlignmentSaver(tf.train.SessionRunHook):
         self.last_step = None
 
     def before_run(self, run_context):
-        return tf.train.SessionRunArgs(self.global_step_tensor)
+        return tf.train.SessionRunArgs({
+            "global_step": self.global_step_tensor,
+            "alignments": self.alignment_tensors
+        })
 
     def after_run(self,
                   run_context,
                   run_values):
-        stale_global_step = run_values.results
-        if (stale_global_step) % self.save_steps == 0:
-            global_step_value, alignments = run_context.session.run((self.global_step_tensor, self.alignment_tensors))
+        stale_global_step = run_values.results["global_step"]
+        alignments = run_values.results["alignments"]
+        if (stale_global_step + 1) % self.save_steps == 0 or stale_global_step == 0:
+            global_step_value = run_context.session.run(self.global_step_tensor)
             for i, alignment in enumerate(alignments):
                 sample_idx = 0
                 sample_alignment = alignment[sample_idx]
                 tag = self.tag_prefix + str(i)
-                # ToDo: Do not modify finalized graph
-                # image = np.uint8(cm.viridis(np.flip(sample_alignment, 1).T) * 255)
-                # self.writer.add_summary(tf.summary.image(tag, image), global_step_value)
                 file_path = os.path.join(self.writer.get_logdir(), tag + "_step{:09d}.png".format(global_step_value))
                 tf.logging.info("Saving alignments for %d at %s", global_step_value, file_path)
                 save_alignment(sample_alignment.T, file_path, info="global_step={}".format(global_step_value))
@@ -138,7 +138,6 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             encoder.register_metrics()
             decoder.register_metrics()
             return tf.summary.merge_all()
-
 
         super(SingleSpeakerTTSModel, self).__init__(
             model_fn=model_fn, model_dir=model_dir, config=config,
