@@ -238,9 +238,11 @@ class Conv1dGLU(CNNCell):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size,
-                 dropout, dilation=1, kernel_initializer=None, bias_initializer=None,
+                 dropout, dilation=1, residual=True, kernel_initializer=None, bias_initializer=None,
                  is_incremental=False, is_training=False, trainable=True, name=None):
         assert in_channels % 2 == 0
+        if residual:
+            assert in_channels == out_channels
         super(Conv1dGLU, self).__init__(name=name, trainable=trainable)
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -264,6 +266,7 @@ class Conv1dGLU(CNNCell):
                                   bias_initializer=self.bias_initializer,
                                   normalize_weight=True)
         self.training = is_training
+        self.residual = residual
 
     def build(self, input_shape):
         in_channels_tensor = input_shape[2]
@@ -285,6 +288,9 @@ class Conv1dGLU(CNNCell):
         a, b = tf.split(x, num_or_size_splits=2, axis=splitdim)
         # apply GLU
         output = a * tf.nn.sigmoid(b)
+        if self.residual:
+            # to preserve variance after residual connection, scale by \sqrt{0.5}
+            output = (output + residual) * math.sqrt(0.5)
         if self.is_incremental:
             return output, next_input_buffer
         else:
