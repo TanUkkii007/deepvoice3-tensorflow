@@ -1,60 +1,70 @@
 import tensorflow as tf
 from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, DecoderPreNetCNNArgs, MultiHopAttentionArgs
-import matplotlib
-
-matplotlib.use('Agg')
-from matplotlib import pyplot as plt
 import os
+import numpy as np
+from typing import List
+from data.tfrecord_utils import write_tfrecord, int64_feature, bytes_feature
 
 
-def save_alignment(alignment, path, info=None):
-    fig, ax = plt.subplots()
-    im = ax.imshow(
-        alignment,
-        aspect='auto',
-        origin='lower',
-        interpolation='none')
-    fig.colorbar(im, ax=ax)
-    xlabel = 'Decoder timestep'
-    if info is not None:
-        xlabel += '\n\n' + info
-    plt.xlabel(xlabel)
-    plt.ylabel('Encoder timestep')
-    plt.tight_layout()
-    plt.savefig(path, format='png')
-    plt.close()
+def write_training_result(global_step: int, id: List[int], text: List[str], predicted_mel: List[np.ndarray],
+                          ground_truth_mel: List[np.ndarray], alignment: List[np.ndarray], filename: str):
+    batch_size = len(ground_truth_mel)
+    raw_predicted_mel = [m.tostring() for m in predicted_mel]
+    raw_ground_truth_mel = [m.tostring() for m in ground_truth_mel]
+    mel_width = ground_truth_mel[0].shape[1]
+    mel_length = [m.shape[0] for m in ground_truth_mel]
+    raw_alignment = [a.tostring() for a in alignment]
+    alignment_source_length = [a.shape[1] for a in alignment]
+    alignment_target_length = [a.shape[2] for a in alignment]
+    example = tf.train.Example(features=tf.train.Features(feature={
+        'global_step': int64_feature([global_step]),
+        'batch_size': int64_feature([batch_size]),
+        'id': int64_feature(id),
+        'text': bytes_feature(text),
+        'predicted_mel': bytes_feature(raw_predicted_mel),
+        'ground_truth_mel': bytes_feature(raw_ground_truth_mel),
+        'mel_length': int64_feature(mel_length),
+        'mel_width': int64_feature([mel_width]),
+        'alignment': bytes_feature(raw_alignment),
+        'alignment_source_length': int64_feature(alignment_source_length),
+        'alignment_target_length': int64_feature(alignment_target_length),
+    }))
+    write_tfrecord(example, filename)
 
 
 class AlignmentSaver(tf.train.SessionRunHook):
 
-    def __init__(self, alignment_tensors, global_step_tensor, save_steps, tag_prefix, writer: tf.summary.FileWriter):
+    def __init__(self, alignment_tensors, global_step_tensor, predicted_mel_tensor, ground_truth_mel_tensor, id_tensor,
+                 text_tensor, save_steps,
+                 tag_prefix, writer: tf.summary.FileWriter):
         self.alignment_tensors = alignment_tensors
         self.global_step_tensor = global_step_tensor
+        self.predicted_mel_tensor = predicted_mel_tensor
+        self.ground_truth_mel_tensor = ground_truth_mel_tensor
+        self.id_tensor = id_tensor
+        self.text_tensor = text_tensor
         self.save_steps = save_steps
         self.tag_prefix = tag_prefix
         self.writer = writer
-        self.last_step = None
 
     def before_run(self, run_context):
         return tf.train.SessionRunArgs({
-            "global_step": self.global_step_tensor,
-            "alignments": self.alignment_tensors
+            "global_step": self.global_step_tensor
         })
 
     def after_run(self,
                   run_context,
                   run_values):
         stale_global_step = run_values.results["global_step"]
-        alignments = run_values.results["alignments"]
         if (stale_global_step + 1) % self.save_steps == 0 or stale_global_step == 0:
-            global_step_value = run_context.session.run(self.global_step_tensor)
-            for i, alignment in enumerate(alignments):
-                sample_idx = 0
-                sample_alignment = alignment[sample_idx]
-                tag = self.tag_prefix + str(i)
-                file_path = os.path.join(self.writer.get_logdir(), tag + "_step{:09d}.png".format(global_step_value))
-                tf.logging.info("Saving alignments for %d at %s", global_step_value, file_path)
-                save_alignment(sample_alignment.T, file_path, info="global_step={}".format(global_step_value))
+            global_step_value, alignments, predicted_mel, ground_truth_mel, id, text = run_context.session.run(
+                (self.global_step_tensor, self.alignment_tensors, self.predicted_mel_tensor,
+                 self.ground_truth_mel_tensor, self.id_tensor, self.text_tensor))
+            result_filename = "training_result_step{:09d}.tfrecord".format(global_step_value)
+            tf.logging.info("Saving a training result for %d at %s", global_step_value, result_filename)
+            write_training_result(global_step_value, list(id), list(text), list(predicted_mel), list(ground_truth_mel),
+                                  alignments,
+                                  filename=os.path.join(self.writer.get_logdir(), result_filename))
 
 
 class SingleSpeakerTTSModel(tf.estimator.Estimator):
@@ -115,7 +125,9 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 global_step = tf.train.get_global_step()
                 train_op = optimizer.minimize(loss, global_step=global_step)
                 summary_writer = tf.summary.FileWriter(model_dir)
-                alignment_saver = AlignmentSaver(alignments, global_step, params.alignment_save_steps,
+                alignment_saver = AlignmentSaver(alignments, global_step, mel_outputs, labels.mel, features.id,
+                                                 features.text,
+                                                 params.alignment_save_steps,
                                                  "alignment_layer", summary_writer)
                 add_stats(encoder, decoder, mel_loss, done_loss)
                 return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[alignment_saver])

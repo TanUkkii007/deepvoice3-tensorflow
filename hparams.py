@@ -58,7 +58,7 @@ hparams = tf.contrib.training.HParams(
     adam_eps=1e-6,
     save_summary_steps=50,
     log_step_count_steps=1,
-    alignment_save_steps=50,
+    alignment_save_steps=100,
     )
 
 
