@@ -14,7 +14,7 @@ If you are interested in multi-speaker implementation with various dataset suppo
 
 Current limitations of this project are following:
 
-- Only JSUT dataset is supported
+- Only [JSUT](https://sites.google.com/site/shinnosuketakamichi/publication/jsut) dataset is supported
 - No multi-speaker implementation
 - Evaluation and inference scripts are not ready
 - Mel-to-linear spectrogram converter is not implemented
