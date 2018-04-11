@@ -58,7 +58,49 @@ def normalize_delimiter(text):
     return text
 
 
-def text_to_sequence(text, mix=False):
+_number_normalization_table = {
+    4: [("1週間", "イッ週間")],
+    6: [("四回", "ヨン回")],
+    20: [("1人", "ヒトリ")],
+    24: [("1473", "センヨンヒャクナナジュウサン")],
+    25: [("4", "ヨン")],
+    43: [("三番目", "サン番目")],
+    49: [("20億", "ニジュー億")],
+    90: [("二つ", "フタツ")],
+    95: [("5冊", "ゴ冊")],
+    102: [("12時", "ジューニ時"), ("1時", "イチ時"), ("1時間", "イチ時間")],
+    103: [("5人", "ゴ人")],
+    105: [("3ヶ月", "サンヶ月"), ("1回", "イッ回")],
+    114: [("3年", "サン年")],
+    122: [("1ダース", "イチダース")],
+    124: [("一本", "イッ本")],
+    131: [("1人", "ヒトリ")],
+    134: [("5ヶ月", "ゴヶ月")],
+    139: [("2月", "ニ月"), ("27日", "ニジュウナノカ")],
+    145: [("5マイル", "ゴマイル")],
+    148: [("5ドル", "ゴドル")],
+    157: [("3番目", "サン番目")],
+    171: [("1ポンド", "イチポンド")],
+    175: [("1杯", "イッ杯")],
+    181: [("1つ", "ヒトツ")],
+    185: [("10パーセント", "ジュッパーセント")],
+    203: [("119番", "ヒャクジュウキュウ番")],
+    218: [("6月", "ロク月"), ("7日", "ナノカ")],
+    222: [("9月", "ク月")],
+    226: [("三分ノ一", "サンブンノイチ")],
+    228: [("5千", "ゴ千")],
+}
+
+
+def normalize_number(id, text):
+    normalizations = _number_normalization_table.get(id)
+    if normalizations is not None:
+        for before, after in normalizations:
+            text = text.replace(before, after)
+    return text
+
+
+def text_to_sequence(text, index, mix=False):
     for c in [" ", "　", "「", "」", "『", "』", "・", "【", "】",
               "（", "）", "(", ")"]:
         text = text.replace(c, "")
@@ -67,6 +109,7 @@ def text_to_sequence(text, mix=False):
 
     text = normalize_delimiter(text)
     text = jaconv.normalize(text)
+    text = normalize_number(index, text)
     if mix:
         text = mix_pronunciation(text)
     text = jaconv.hira2kata(text)
@@ -80,9 +123,9 @@ def sequence_to_text(seq):
 
 
 def _process_text(out_dir, index, text):
-    sequence, text1 = text_to_sequence(text, mix=False)
+    sequence, text1 = text_to_sequence(text, index, mix=False)
     sequence = np.array(sequence, dtype=np.int64)
-    sequence_mixed, text2 = text_to_sequence(text, mix=True)
+    sequence_mixed, text2 = text_to_sequence(text, index, mix=True)
     sequence_mixed = np.array(sequence_mixed, dtype=np.int64)
     filename = 'jsut-source-%05d.tfrecords' % index
     write_preprocessed_source_data2(index, text1, sequence, text2, sequence_mixed, os.path.join(out_dir, filename))
@@ -178,7 +221,6 @@ class JSUT():
         hours = frames * frame_shift_ms / (3600 * 1000)
         print('Wrote %d utterances, %d frames (%.2f hours)' % (len(metadata), frames, hours))
         print('Max output length: %d' % max(m.n_frames for m in metadata))
-
 
     def _write_source_metadata(self, metadata: List[SourceMetaData]):
         with open(os.path.join(self.out_dir, 'train-source.txt'), 'w', encoding='utf-8') as f:
