@@ -40,6 +40,7 @@ class Linear(tf.layers.Layer):
 
     def register_metrics(self):
         self._wn.register_metrics()
+        tf.summary.histogram(self.bias.name, self.bias)
 
 
 class Embedding(tf.layers.Layer):
@@ -181,6 +182,7 @@ class Conv1d(CNNCell):
     def register_metrics(self):
         if self.normalize_weight:
             self._wn.register_metrics()
+        tf.summary.histogram(self.bias.name, self.bias)
 
 
 class NonCausalConv1d(tf.layers.Layer):
@@ -231,6 +233,7 @@ class NonCausalConv1d(tf.layers.Layer):
     def register_metrics(self):
         if self.normalize_weight:
             self._wn.register_metrics()
+        tf.summary.histogram(self.bias.name, self.bias)
 
 
 class Conv1dGLU(CNNCell):
