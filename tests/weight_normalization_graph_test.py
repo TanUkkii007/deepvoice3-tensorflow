@@ -13,7 +13,7 @@ class WeightNormalizationTest(tf.test.TestCase):
            input=arrays(dtype=np.float32, shape=[5, 1], elements=integers(-10, 10), unique=True))
     @settings(max_examples=10, timeout=unlimited)
     def test_weight_normalization_2(self, _weight, input):
-        assume(not np.all(_weight == 0.0))
+        assume(not np.any(np.all(_weight == 0.0, axis=1)))
         input_pf = tf.placeholder(dtype=tf.float32, shape=[5, 1])
         weight = tf.Variable(_weight, trainable=False)
         wn = WeightNormalization(weight, dimension=0)
@@ -31,6 +31,9 @@ class WeightNormalizationTest(tf.test.TestCase):
 
         with self.test_session() as sess:
             sess.run(tf.global_variables_initializer())
+
+            w, nw = sess.run([weight, normalized_weight])
+            self.assertAllEqual(w, nw)
 
             output_value, grad_w_value, grad_g_value, grad_v_value, grad_w_original_value = sess.run(
                 [output, grad_w, grad_g, grad_v, grad_w_original], feed_dict={input_pf: input})
