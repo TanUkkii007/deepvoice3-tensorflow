@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume, HealthCheck
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPreNetCNNArgs
+from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPreNetArgs
 
 even_number = lambda x: x % 2 == 0
 
@@ -62,7 +62,7 @@ class DecoderTest(tf.test.TestCase):
         print("query", query)
         print("memory", memory)
 
-        preattention_args = [DecoderPreNetCNNArgs(mha_arg.out_channels, preattention_kernel_size, dilation=2 ** i) for i
+        preattention_args = [DecoderPreNetArgs(mha_arg.out_channels) for _
                              in range(num_preattention)]
 
         def one_tenth_initializer(length):
@@ -147,7 +147,7 @@ class DecoderTest(tf.test.TestCase):
         print("query", query)
         print("memory", memory)
 
-        preattention_args = [DecoderPreNetCNNArgs(mha_arg.out_channels, preattention_kernel_size, dilation=2 ** i) for i
+        preattention_args = [DecoderPreNetArgs(mha_arg.out_channels) for _
                              in range(num_preattention)]
         decoder_online = Decoder(embed_dim, in_dim, r, max_positions, preattention=preattention_args,
                                  mh_attentions=(mha_arg,) * num_mha,

@@ -402,9 +402,111 @@ class DecoderPreNetCNN(CNNCell):
             c.register_metrics()
 
 
+class PositionWiseFFN(CNNCell):
+    '''
+    Position-wise feed forward network based on CNN with kernel size = 1
+    '''
+
+    def __init__(self, in_channels, out_channels, dropout=0.1, is_incremental=False,
+                 kernel_initializer=None, bias_initializer=None, training=False,
+                 normalize_weight=True,
+                 trainable=True, name=None, **kwargs):
+        super(PositionWiseFFN, self).__init__(name=name, trainable=trainable, **kwargs)
+        self.layer = Conv1d(in_channels, out_channels, kernel_size=1, dilation=1, activation=tf.nn.relu,
+                            is_incremental=is_incremental, is_training=training,
+                            dropout=dropout,
+                            kernel_initializer=kernel_initializer,
+                            bias_initializer=bias_initializer, normalize_weight=normalize_weight)
+
+        self._is_incremental = is_incremental
+        self.dropout = dropout
+        self.training = training
+
+    @property
+    def is_incremental(self):
+        return self._is_incremental
+
+    @property
+    def state_size(self):
+        return self.layer.state_size
+
+    @property
+    def output_size(self):
+        return self.layer.output_size
+
+    def zero_state(self, batch_size, dtype):
+        return self.layer.zero_state(batch_size, dtype)
+
+    def build(self, _):
+        self.built = True
+
+    def call(self, inputs, state=None, **kwargs):
+        x = tf.layers.dropout(inputs, rate=self.dropout, training=self.training)
+        return self.layer(x, state=state, **kwargs)
+
+    def register_metrics(self):
+        self.layer.register_metrics()
+
+
+class DecoderPreNetArgs(namedtuple("DecoderPreNetArgs", ["out_channels"])):
+    pass
+
+
+class DecoderPreNet(CNNCell):
+
+    def __init__(self, in_channels, params, dropout=0.1, is_incremental=False,
+                 kernel_initializer=None, bias_initializer=None, training=False,
+                 trainable=True, name=None, **kwargs):
+        super(DecoderPreNet, self).__init__(name=name, trainable=trainable, **kwargs)
+        adjust_layer = PositionWiseFFN(in_channels, params[0].out_channels,
+                                       dropout=dropout,
+                                       is_incremental=is_incremental, training=training,
+                                       kernel_initializer=kernel_initializer,
+                                       bias_initializer=bias_initializer, normalize_weight=True)
+        layers = [adjust_layer]
+        in_channels = adjust_layer.output_size
+        for p in params:
+            conv = PositionWiseFFN(in_channels, p.out_channels,
+                                   dropout=dropout,
+                                   kernel_initializer=kernel_initializer, bias_initializer=bias_initializer,
+                                   is_incremental=is_incremental, training=training, normalize_weight=True)
+            layers.append(conv)
+            in_channels = conv.output_size
+
+        self._layers = layers
+        self.layer = MultiCNNCell(layers, is_incremental)
+
+        self._is_incremental = is_incremental
+
+    @property
+    def is_incremental(self):
+        return self._is_incremental
+
+    @property
+    def state_size(self):
+        return self.layer.state_size
+
+    @property
+    def output_size(self):
+        return self.layer.output_size
+
+    def zero_state(self, batch_size, dtype):
+        return self.layer.zero_state(batch_size, dtype)
+
+    def build(self, _):
+        self.built = True
+
+    def call(self, inputs, state=None, **kwargs):
+        return self.layer(inputs, state=state, **kwargs)
+
+    def register_metrics(self):
+        for c in self._layers:
+            c.register_metrics()
+
+
 class Decoder(tf.layers.Layer):
     def __init__(self, embed_dim, in_dim=80, r=5, max_positions=512,
-                 preattention=(DecoderPreNetCNNArgs(128, 5, 1),) * 4,
+                 preattention=(DecoderPreNetArgs(128),) * 4,
                  mh_attentions=(MultiHopAttentionArgs(128, 5, 1, 0.1),) * 4, dropout=0.1,
                  use_memory_mask=False,
                  query_position_rate=1.0,
@@ -445,11 +547,11 @@ class Decoder(tf.layers.Layer):
         self.embed_query_positions = SinusoidalEncodingEmbedding(max_positions, mh_attentions[0].out_channels)
         self.embed_key_positions = SinusoidalEncodingEmbedding(max_positions, embed_dim)
 
-        self.preattention = DecoderPreNetCNN(in_channels=in_dim * r, params=preattention, dropout=dropout,
-                                             is_incremental=is_incremental,
-                                             kernel_initializer=prenet_weight_initializer,
-                                             bias_initializer=prenet_bias_initializer,
-                                             training=training)
+        self.preattention = DecoderPreNet(in_channels=in_dim * r, params=preattention, dropout=dropout,
+                                          is_incremental=is_incremental,
+                                          kernel_initializer=prenet_weight_initializer,
+                                          bias_initializer=prenet_bias_initializer,
+                                          training=training)
 
         assert self.preattention.output_size == self.embed_query_positions.embedding_dim
 

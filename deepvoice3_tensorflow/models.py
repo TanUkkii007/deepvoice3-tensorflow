@@ -1,5 +1,5 @@
 import tensorflow as tf
-from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, DecoderPreNetCNNArgs, MultiHopAttentionArgs
+from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, DecoderPreNetArgs, MultiHopAttentionArgs
 import os
 import numpy as np
 from typing import List
@@ -80,7 +80,7 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             eh = params.encoder_channels
             dh = params.decoder_channels
 
-            preattention = [DecoderPreNetCNNArgs(dh, k, 1), DecoderPreNetCNNArgs(dh, k, 3)]
+            preattention = [DecoderPreNetArgs(dh), DecoderPreNetArgs(dh)]
             mhattention = [MultiHopAttentionArgs(dh, k, 1, dropout),
                            MultiHopAttentionArgs(dh, k, 3, dropout),
                            MultiHopAttentionArgs(dh, k, 9, dropout),
