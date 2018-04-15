@@ -108,12 +108,12 @@ class FrontendTest(tf.test.TestCase):
                 self.assertAllEqual(np.repeat(-1e9, max_source_length - s.source_length[1]),
                                     s.mask[1][s.source_length[1]:])
 
-                self.assertAllEqual(np.zeros(s.source_length2[0]), s.mask[0][:s.source_length2[0]])
-                self.assertAllEqual(np.zeros(s.source_length2[1]), s.mask[1][:s.source_length2[1]])
+                self.assertAllEqual(np.zeros(s.source_length2[0]), s.mask2[0][:s.source_length2[0]])
+                self.assertAllEqual(np.zeros(s.source_length2[1]), s.mask2[1][:s.source_length2[1]])
                 self.assertAllEqual(np.repeat(-1e9, max_source_length2 - s.source_length2[0]),
-                                    s.mask[0][s.source_length2[0]:])
+                                    s.mask2[0][s.source_length2[0]:])
                 self.assertAllEqual(np.repeat(-1e9, max_source_length2 - s.source_length2[1]),
-                                    s.mask[1][s.source_length2[1]:])
+                                    s.mask2[1][s.source_length2[1]:])
 
                 target_length1 = t.target_length[0]
                 target_length2 = t.target_length[1]
