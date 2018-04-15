@@ -220,6 +220,7 @@ class CNNAttentionWrapper(CNNCell):
         self._output_size = out_channels
         self.r = r
         self.memory_mask = memory_mask
+        self._collect_metrics = training
 
     @property
     def is_incremental(self):
@@ -269,6 +270,8 @@ class CNNAttentionWrapper(CNNCell):
             query = self.convolution(query)
 
         query = query if frame_pos_embed is None else query + frame_pos_embed
+        if self._collect_metrics:
+            tf.summary.histogram("query", query)
 
         output, attention_scores = self.attention(query, memory_mask=self.memory_mask)
         alignment_history = state.alignment_history.write(state.time, attention_scores)
@@ -535,7 +538,7 @@ class Decoder(tf.layers.Layer):
         self.in_dim = in_dim
         self.r = r
         self.training = training
-        self._collect_metrics = False
+        self._collect_metrics = training
 
         self.query_position_rate = query_position_rate
         self.key_position_rate = key_position_rate
@@ -604,10 +607,17 @@ class Decoder(tf.layers.Layer):
         if text_positions is not None:
             w = self.key_position_rate
             text_pos_embed = self.embed_key_positions(text_positions, w)
+                
             keys = keys + text_pos_embed
+            if self._collect_metrics:
+                tf.summary.histogram("keys", keys)
+                tf.summary.histogram("text_pos_embed", text_pos_embed)
+
         if frame_positions is not None:
             w = self.query_position_rate
             frame_pos_embed = self.embed_query_positions(frame_positions, w)
+            if self._collect_metrics:
+                tf.summary.histogram("frame_pos_embed", frame_pos_embed)
         else:
             raise ValueError("frame_positions is required")
             # frame_pos_embed = None
@@ -631,12 +641,13 @@ class Decoder(tf.layers.Layer):
                                          query_projection_weight_initializer=self.attention_query_projection_weight_initializer,
                                          out_projection_weight_initializer=self.attention_out_projection_weight_initializer,
                                          training=self.training)
-        if self._collect_metrics:
-            mp_attention.register_metrics()
 
         x, alignments = mp_attention(CNNAttentionWrapperInput(x, frame_pos_embed),
                                      mp_attention.zero_state(inputs.shape[0].value,
                                                              inputs.dtype))  # ToDo: does not work when batch size is None
+
+        if self._collect_metrics:
+            mp_attention.register_metrics()
 
         x = self.last_conv(x.query)
 
@@ -743,7 +754,6 @@ class Decoder(tf.layers.Layer):
         return tf.concat([test_input, final_input], axis=1)
 
     def register_metrics(self):
-        self._collect_metrics = True
         self.embed_key_positions.register_metrics()
         self.embed_query_positions.register_metrics()
         self.preattention.register_metrics()
