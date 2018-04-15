@@ -46,6 +46,8 @@ def train(hparams, model_dir, source_files, target_files):
 
         ).downsample_mel(
 
+        ).add_target_mask(
+
         ).dataset
         return batched
 

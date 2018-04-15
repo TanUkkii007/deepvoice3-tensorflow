@@ -44,6 +44,7 @@ hparams = tf.contrib.training.HParams(
     key_projection=False,
     value_projection=False,
     use_memory_mask=True,
+    use_query_mask=True,
     trainable_positional_encodings=False,
     freeze_embedding=False,
 

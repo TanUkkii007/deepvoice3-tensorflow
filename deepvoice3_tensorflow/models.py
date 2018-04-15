@@ -99,6 +99,7 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                               mh_attentions=mhattention,
                               dropout=dropout,
                               use_memory_mask=params.use_memory_mask,
+                              use_query_mask=params.use_query_mask,
                               query_position_rate=params.query_position_rate,
                               key_position_rate=params.key_position_rate,
                               max_decoder_steps=params.max_decoder_steps,
@@ -110,7 +111,8 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             mel_outputs, done_hat, attention_states = decoder((keys, values), input=labels.mel,
                                                               frame_positions=labels.frame_positions,
                                                               text_positions=features.text_positions,
-                                                              memory_mask=features.mask)
+                                                              memory_mask=features.mask,
+                                                              query_mask=labels.mask)
 
             # undo reduction
             mel_outputs = tf.reshape(mel_outputs, shape=(params.batch_size, -1, params.num_mels))

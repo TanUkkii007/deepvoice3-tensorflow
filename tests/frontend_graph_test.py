@@ -68,7 +68,7 @@ class FrontendTest(tf.test.TestCase):
         frontend = Frontend(source, target, hparams)
 
         batched = frontend.prepare().zip_source_and_target().repeat(2).shuffle(
-            10).group_by_batch().add_frame_positions().add_memory_mask().dataset
+            10).group_by_batch().add_frame_positions().add_memory_mask().add_target_mask().dataset
 
         with self.test_session() as sess:
             iterator = batched.make_one_shot_iterator()
@@ -161,3 +161,13 @@ class FrontendTest(tf.test.TestCase):
                                     t.frame_positions[0])
                 self.assertAllEqual(np.arange(1, max_target_length // r // hparams.downsample_step + 1),
                                     t.frame_positions[1])
+
+                # target_mask
+                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.mask[0]))
+                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.mask[1]))
+                self.assertAllEqual(np.zeros(t.target_length[0] // r // hparams.downsample_step), t.mask[0][:t.target_length[0] // r // hparams.downsample_step])
+                self.assertAllEqual(np.zeros(t.target_length[1] // r // hparams.downsample_step), t.mask[1][:t.target_length[1] // r // hparams.downsample_step])
+                self.assertAllEqual(np.repeat(-1e9, max_target_length // r // hparams.downsample_step - target_length1 // r // hparams.downsample_step),
+                                    t.mask[0][target_length1 // r // hparams.downsample_step:])
+                self.assertAllEqual(np.repeat(-1e9, max_target_length // r // hparams.downsample_step - target_length2 // r // hparams.downsample_step),
+                                    t.mask[1][target_length2 // r // hparams.downsample_step:])

@@ -30,6 +30,12 @@ class PreparedTargetData(
                             "frame_positions"])):
     pass
 
+class PreparedTargetDataWithMask(
+    collections.namedtuple("PreparedTargetDataWithMask",
+                           ["id", "spec", "spec_width", "mel", "mel_width", "target_length", "done",
+                            "frame_positions", "mask"])):
+    pass
+
 
 def _lcm(a, b):
     return a * b // math.gcd(a, b)
@@ -345,3 +351,30 @@ class _FrontendBatchedViewWithFramePositions(_FrontendBatchedViewBase):
 
         converted = self.dataset.map(lambda x, y: convert(x, y))
         return _FrontendBatchedViewWithFramePositions(converted, self.hparams)
+
+    def add_target_mask(self):
+        r = self.hparams.outputs_per_step
+        downsample_step = self.hparams.downsample_step
+
+        def convert(s, t: PreparedTargetData):
+            mask_value = -1e9
+
+            def to_float_mask(mask):
+                return tf.to_float(tf.logical_not(mask)) * mask_value
+
+            mask = to_float_mask(tf.sequence_mask(t.target_length // r // downsample_step, tf.shape(t.frame_positions)[1]))
+
+            return s, PreparedTargetDataWithMask(
+                id=t.id,
+                spec=t.spec,
+                spec_width=t.spec_width,
+                mel=t.mel,
+                mel_width=t.mel_width,
+                target_length=t.target_length,
+                done=t.done,
+                frame_positions=t.frame_positions,
+                mask=mask,
+            )
+
+        converted = self.dataset.map(lambda x, y: convert(x, y))
+        return self.apply(converted, self.hparams)
