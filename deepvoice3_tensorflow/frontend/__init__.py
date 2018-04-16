@@ -248,7 +248,7 @@ class _FrontendZippedView(FrontendZippedViewBase):
 
         batched = self.dataset.apply(tf.contrib.data.group_by_window(key_func,
                                                                      reduce_func,
-                                                                     window_size=batch_size))
+                                                                     window_size=batch_size*5))
         return _FrontendBatchedView(batched, self.hparams)
 
 

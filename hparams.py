@@ -48,9 +48,9 @@ hparams = tf.contrib.training.HParams(
 
     # Training
     batch_size=16,
-    approx_min_target_length = 200,
-    batch_bucket_width = 20,
-    batch_num_buckets = 20,
+    approx_min_target_length=200,
+    batch_bucket_width=40,
+    batch_num_buckets=50,
     initial_learning_rate=1e-4,  # 0.0001,
     adam_beta1=0.5,
     adam_beta2=0.9,
