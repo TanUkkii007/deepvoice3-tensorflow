@@ -46,6 +46,7 @@ class Linear(tf.layers.Layer):
 class Embedding(tf.layers.Layer):
 
     def __init__(self, num_embeddings, embedding_dim, stddev=0.01, weight_initializer=None,
+                 normalize_weight=False,
                  trainable=True, name=None):
         super(Embedding, self).__init__(name=name, trainable=trainable)
         self.num_embeddings = num_embeddings
@@ -53,21 +54,26 @@ class Embedding(tf.layers.Layer):
         self.weight_initializer = weight_initializer if weight_initializer is not None else tf.truncated_normal_initializer(
             mean=0,
             stddev=stddev)
+        self.normalize_weight = normalize_weight
 
     def build(self, _):
-        weight = self.add_variable("weight", shape=(self.num_embeddings, self.embedding_dim),
+        self.weight = self.add_variable("weight", shape=(self.num_embeddings, self.embedding_dim),
                                    dtype=tf.float32,
                                    initializer=self.weight_initializer,
                                    trainable=False)
-        self._wn = WeightNormalization(weight)
-        self.normalized_weight = self._wn(weight)
+        if self.normalize_weight:
+            self._wn = WeightNormalization(self.weight)
+            self.weight = self._wn(self.weight)
         self.built = True
 
     def call(self, inputs, **kwargs):
-        return tf.nn.embedding_lookup(self.normalized_weight, inputs)
+        return tf.nn.embedding_lookup(self.weight, inputs)
 
     def register_metrics(self):
-        self._wn.register_metrics()
+        if self.normalize_weight:
+            self._wn.register_metrics()
+        else:
+            tf.summary.histogram(self.weight.name, self.weight)
 
 
 class SinusoidalEncodingEmbedding(tf.layers.Layer):
