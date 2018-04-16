@@ -80,8 +80,8 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             eh = params.encoder_channels
             dh = params.decoder_channels
 
-            preattention = [DecoderPreNetArgs(dh), DecoderPreNetArgs(dh)]
-            mhattention = [MultiHopAttentionArgs(dh, k, 1, dropout),
+            preattention = [DecoderPreNetArgs(dh//2), DecoderPreNetArgs(dh)]
+            mhattention = [MultiHopAttentionArgs(dh, k, 1, 0.0),
                            MultiHopAttentionArgs(dh, k, 3, dropout),
                            MultiHopAttentionArgs(dh, k, 9, dropout),
                            MultiHopAttentionArgs(dh, k, 27, dropout),
