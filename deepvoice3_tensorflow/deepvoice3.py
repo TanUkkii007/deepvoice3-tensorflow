@@ -119,14 +119,15 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         # Q K^\top
         x = tf.matmul(query, self.keys, transpose_b=True)
 
+        scaling_factor = 1.0 / math.sqrt(self._embed_dim)
+        x = x * scaling_factor
+
         x = self._memory_mask(x, memory_mask)
         x = self._query_mask(x, query_mask)
 
         # softmax over last dim
         # (B, T_query, T_memory)
-        shape = tf.shape(x)
-        x = tf.nn.softmax(tf.reshape(x, shape=[shape[0] * shape[1], shape[2]]), axis=1)
-        x = tf.reshape(x, shape=shape)
+        x = tf.nn.softmax(x, axis=-1)
         alignment_scores = x
 
         x = tf.layers.dropout(x, rate=self.dropout, training=self.training)
@@ -135,7 +136,7 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
 
         # scale attention output
         s = tf.cast(tf.shape(self.values)[1], dtype=tf.float32)
-        x = x * (s * tf.sqrt(1.0 / s))
+        x = x / tf.sqrt(s)
         return x, alignment_scores
 
     def register_metrics(self):
