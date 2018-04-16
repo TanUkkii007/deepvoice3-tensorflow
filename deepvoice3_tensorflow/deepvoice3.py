@@ -119,9 +119,6 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
         # Q K^\top
         x = tf.matmul(query, self.keys, transpose_b=True)
 
-        scaling_factor = 1.0 / math.sqrt(self._embed_dim)
-        x = x * scaling_factor
-
         x = self._memory_mask(x, memory_mask)
         x = self._query_mask(x, query_mask)
 
@@ -586,6 +583,14 @@ class Decoder(tf.layers.Layer):
         self.is_incremental = is_incremental
         self.training = training
 
+        if attention_key_projection_weight_initializer is None and attention_query_projection_weight_initializer is None:
+            # key projection and query projection should have the same weight values.
+            # Otherwise, initial alignment built by positional encoding will be broken.
+            stddev = math.sqrt((1.0 - dropout) / embed_dim)
+            initializer = tf.truncated_normal_initializer(mean=0, stddev=stddev, seed=123456789)
+            attention_key_projection_weight_initializer = initializer
+            attention_query_projection_weight_initializer = initializer
+
         self.attention_key_projection_weight_initializer = attention_key_projection_weight_initializer
         self.attention_key_projection_bias_initializer = attention_key_projection_bias_initializer
         self.attention_value_projection_weight_initializer = attention_value_projection_weight_initializer
@@ -640,6 +645,7 @@ class Decoder(tf.layers.Layer):
         x = self.preattention(x)
 
         attention_mechanism = ScaledDotProductAttentionMechanism(keys, values, self.embed_dim,
+                                                                 dropout=self.dropout,
                                                                  key_projection_weight_initializer=self.attention_key_projection_weight_initializer,
                                                                  key_projection_bias_initializer=self.attention_key_projection_bias_initializer,
                                                                  value_projection_weight_initializer=self.attention_value_projection_weight_initializer,

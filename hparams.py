@@ -41,8 +41,6 @@ hparams = tf.contrib.training.HParams(
     min_decoder_steps=10,
     # can be computed by `compute_timestamp_ratio.py`.
     key_position_rate=2.37, # for jsut
-    key_projection=False,
-    value_projection=False,
     use_memory_mask=True,
     use_query_mask=True,
     trainable_positional_encodings=False,
