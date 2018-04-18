@@ -521,7 +521,7 @@ class Decoder(tf.layers.Layer):
                  use_memory_mask=False,
                  use_query_mask=False,
                  query_position_rate=1.0,
-                 key_position_rate=1.29,
+                 key_position_rate=1.0,
                  max_decoder_steps=200,
                  min_decoder_steps=10,
                  is_incremental=False,
@@ -587,7 +587,7 @@ class Decoder(tf.layers.Layer):
             # key projection and query projection should have the same weight values.
             # Otherwise, initial alignment built by positional encoding will be broken.
             stddev = math.sqrt((1.0 - dropout) / embed_dim)
-            initializer = tf.truncated_normal_initializer(mean=0, stddev=stddev, seed=123456789)
+            initializer = tf.truncated_normal_initializer(mean=0, stddev=stddev, seed=1)
             attention_key_projection_weight_initializer = initializer
             attention_query_projection_weight_initializer = initializer
 
@@ -608,14 +608,15 @@ class Decoder(tf.layers.Layer):
         if self.is_incremental:
             return self._call_incremental(encoder_out, text_positions, test_inputs)
         else:
-            return self._call(encoder_out, input, text_positions=text_positions, frame_positions=frame_positions,
-                              memory_mask=memory_mask, query_mask=query_mask)
+            with tf.control_dependencies([tf.assert_equal(0, tf.shape(input)[1] % self.r)]):
+                return self._call(encoder_out, input, text_positions=text_positions, frame_positions=frame_positions,
+                                  memory_mask=memory_mask, query_mask=query_mask)
 
     def _call(self, encoder_out, inputs, text_positions=None, frame_positions=None, memory_mask=None, query_mask=None):
         if inputs.shape[-1].value == self.in_dim:
             original_shape = inputs.shape
             s = tf.shape(inputs)
-            new_shape = tf.stack([s[0], s[1] // self.r, tf.constant(-1, dtype=tf.int32)])
+            new_shape = tf.stack([s[0], s[1] // self.r, tf.constant(self.in_dim * self.r, dtype=tf.int32)])
             inputs = tf.reshape(inputs, shape=new_shape)
             inputs.set_shape((original_shape[0].value, None, self.in_dim * self.r))
 

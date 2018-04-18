@@ -23,7 +23,7 @@ hparams = tf.contrib.training.HParams(
 
     # Model:
     downsample_step=4,
-    outputs_per_step=1,
+    outputs_per_step=3,
     embedding_weight_std=0.1,
     padding_idx=0,
     # Maximum number of input text length
@@ -40,7 +40,7 @@ hparams = tf.contrib.training.HParams(
     max_decoder_steps=200,
     min_decoder_steps=10,
     # can be computed by `compute_timestamp_ratio.py`.
-    key_position_rate=2.37, # for jsut
+    key_position_rate=1.03, # for jsut
     use_memory_mask=True,
     use_query_mask=True,
     trainable_positional_encodings=False,
