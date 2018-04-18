@@ -162,12 +162,26 @@ class FrontendTest(tf.test.TestCase):
                 self.assertAllEqual(np.arange(1, max_target_length // r // hparams.downsample_step + 1),
                                     t.frame_positions[1])
 
-                # target_mask
-                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.mask[0]))
-                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.mask[1]))
-                self.assertAllEqual(np.zeros(t.target_length[0] // r // hparams.downsample_step), t.mask[0][:t.target_length[0] // r // hparams.downsample_step])
-                self.assertAllEqual(np.zeros(t.target_length[1] // r // hparams.downsample_step), t.mask[1][:t.target_length[1] // r // hparams.downsample_step])
-                self.assertAllEqual(np.repeat(-1e9, max_target_length // r // hparams.downsample_step - target_length1 // r // hparams.downsample_step),
-                                    t.mask[0][target_length1 // r // hparams.downsample_step:])
-                self.assertAllEqual(np.repeat(-1e9, max_target_length // r // hparams.downsample_step - target_length2 // r // hparams.downsample_step),
-                                    t.mask[1][target_length2 // r // hparams.downsample_step:])
+                # spec_loss_mask
+                self.assertEqual(max_target_length // hparams.downsample_step, len(t.spec_loss_mask[0]))
+                self.assertEqual(max_target_length // hparams.downsample_step, len(t.spec_loss_mask[1]))
+                self.assertAllEqual(np.ones(t.target_length[0] // hparams.downsample_step), t.spec_loss_mask[0][:t.target_length[0] // hparams.downsample_step])
+                self.assertAllEqual(np.ones(t.target_length[1] // hparams.downsample_step), t.spec_loss_mask[1][:t.target_length[1] // hparams.downsample_step])
+                self.assertAllEqual(np.zeros(max_target_length // hparams.downsample_step - target_length1 // hparams.downsample_step),
+                                    t.spec_loss_mask[0][target_length1 // hparams.downsample_step:])
+                self.assertAllEqual(np.zeros(max_target_length // hparams.downsample_step - target_length2 // hparams.downsample_step),
+                                    t.spec_loss_mask[1][target_length2 // hparams.downsample_step:])
+
+                # binary_loss_mask
+                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.binary_loss_mask[0]))
+                self.assertEqual(max_target_length // r // hparams.downsample_step, len(t.binary_loss_mask[1]))
+                self.assertAllEqual(np.ones(t.target_length[0] // r // hparams.downsample_step),
+                                    t.binary_loss_mask[0][:t.target_length[0] // r // hparams.downsample_step])
+                self.assertAllEqual(np.ones(t.target_length[1] // r // hparams.downsample_step),
+                                    t.binary_loss_mask[1][:t.target_length[1] // r // hparams.downsample_step])
+                self.assertAllEqual(np.zeros(
+                    max_target_length // r // hparams.downsample_step - target_length1 // r // hparams.downsample_step),
+                                    t.binary_loss_mask[0][target_length1 // r // hparams.downsample_step:])
+                self.assertAllEqual(np.zeros(
+                    max_target_length // r // hparams.downsample_step - target_length2 // r // hparams.downsample_step),
+                                    t.binary_loss_mask[1][target_length2 // r // hparams.downsample_step:])

@@ -42,7 +42,6 @@ hparams = tf.contrib.training.HParams(
     # can be computed by `compute_timestamp_ratio.py`.
     key_position_rate=1.03, # for jsut
     use_memory_mask=True,
-    use_query_mask=True,
     trainable_positional_encodings=False,
     freeze_embedding=False,
 

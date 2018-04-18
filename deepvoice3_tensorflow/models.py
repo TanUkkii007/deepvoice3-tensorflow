@@ -99,7 +99,6 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                               mh_attentions=mhattention,
                               dropout=dropout,
                               use_memory_mask=params.use_memory_mask,
-                              use_query_mask=params.use_query_mask,
                               query_position_rate=params.query_position_rate,
                               key_position_rate=params.key_position_rate,
                               max_decoder_steps=params.max_decoder_steps,
@@ -111,16 +110,15 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             mel_outputs, done_hat, attention_states = decoder((keys, values), input=labels.mel,
                                                               frame_positions=labels.frame_positions,
                                                               text_positions=features.text_positions,
-                                                              memory_mask=features.mask,
-                                                              query_mask=labels.mask)
+                                                              memory_mask=features.mask)
 
             # undo reduction
             mel_outputs = tf.reshape(mel_outputs, shape=(params.batch_size, -1, params.num_mels))
 
             if training:
                 alignments = [s.alignments for s in attention_states]
-                mel_loss = spec_loss(mel_outputs, labels.mel)
-                done_loss = binary_loss(done_hat, labels.done)
+                mel_loss = spec_loss(mel_outputs, labels.mel, labels.spec_loss_mask)
+                done_loss = binary_loss(done_hat, labels.done, labels.binary_loss_mask)
                 loss = mel_loss + done_loss
                 optimizer = tf.train.AdamOptimizer(learning_rate=params.initial_learning_rate, beta1=params.adam_beta1,
                                                    beta2=params.adam_beta2, epsilon=params.adam_eps)
@@ -136,7 +134,7 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 add_stats(encoder, decoder, mel_loss, done_loss)
                 return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[alignment_saver])
 
-        def spec_loss(y_hat, y, priority_bin=None, priority_w=0):
+        def spec_loss(y_hat, y, mask, priority_bin=None, priority_w=0):
             l1_loss = tf.abs(y_hat - y)
 
             # Priority L1 loss
@@ -144,10 +142,10 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 priority_loss = tf.abs(y_hat[:, :, :priority_bin] - y[:, :, :priority_bin])
                 l1_loss = (1 - priority_w) * l1_loss + priority_w * priority_loss
 
-            return tf.losses.compute_weighted_loss(l1_loss)
+            return tf.losses.compute_weighted_loss(l1_loss, weights=tf.expand_dims(mask, axis=2))
 
-        def binary_loss(done_hat, done):
-            return tf.losses.sigmoid_cross_entropy(done, tf.squeeze(done_hat, axis=-1))
+        def binary_loss(done_hat, done, mask):
+            return tf.losses.sigmoid_cross_entropy(done, tf.squeeze(done_hat, axis=-1), weights=mask)
 
         def add_stats(encoder, decoder, mel_loss, done_loss):
             tf.summary.scalar("mel_loss", mel_loss)

@@ -1,7 +1,5 @@
 # coding: utf-8
 """
-Preprocess dataset
-
 usage: visualize_alignment.py [options] <filename>
 
 options:

@@ -44,9 +44,9 @@ def train(hparams, model_dir, source_files, target_files):
 
         ).add_frame_positions(
 
-        ).downsample_mel(
-
         ).add_target_mask(
+
+        ).downsample_mel(
 
         ).dataset
         return batched

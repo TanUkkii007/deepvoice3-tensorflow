@@ -33,7 +33,7 @@ class PreparedTargetData(
 class PreparedTargetDataWithMask(
     collections.namedtuple("PreparedTargetDataWithMask",
                            ["id", "spec", "spec_width", "mel", "mel_width", "target_length", "done",
-                            "frame_positions", "mask"])):
+                            "frame_positions", "spec_loss_mask", "binary_loss_mask"])):
     pass
 
 
@@ -171,6 +171,9 @@ class FrontendZippedViewBase:
             ), t
 
         return self.apply(self.dataset.map(lambda x, y: convert(x, y)), self.hparams)
+
+    def filter(self, predicate):
+        return self.apply(tf.data.Dataset.filter(self.dataset, predicate), self.hparams)
 
 
 class _FrontendZippedView(FrontendZippedViewBase):
@@ -338,7 +341,7 @@ class _FrontendBatchedViewWithFramePositions(_FrontendBatchedViewBase):
 
     def downsample_mel(self):
         def convert(source, target):
-            return source, PreparedTargetData(
+            return source, PreparedTargetDataWithMask(
                 id=target.id,
                 spec=target.spec,
                 spec_width=target.spec_width,
@@ -347,6 +350,8 @@ class _FrontendBatchedViewWithFramePositions(_FrontendBatchedViewBase):
                 target_length=target.target_length,
                 done=target.done,
                 frame_positions=target.frame_positions,
+                spec_loss_mask=target.spec_loss_mask,
+                binary_loss_mask=target.binary_loss_mask,
             )
 
         converted = self.dataset.map(lambda x, y: convert(x, y))
@@ -357,12 +362,12 @@ class _FrontendBatchedViewWithFramePositions(_FrontendBatchedViewBase):
         downsample_step = self.hparams.downsample_step
 
         def convert(s, t: PreparedTargetData):
-            mask_value = -1e9
 
             def to_float_mask(mask):
-                return tf.to_float(tf.logical_not(mask)) * mask_value
+                return tf.to_float(mask)
 
-            mask = to_float_mask(tf.sequence_mask(t.target_length // r // downsample_step, tf.shape(t.frame_positions)[1]))
+            spec_loss_mask = to_float_mask(tf.sequence_mask(t.target_length // downsample_step, tf.shape(t.mel)[1] // downsample_step))
+            binary_loss_mask = to_float_mask(tf.sequence_mask(t.target_length // r // downsample_step, tf.shape(t.frame_positions)[1]))
 
             return s, PreparedTargetDataWithMask(
                 id=t.id,
@@ -373,7 +378,8 @@ class _FrontendBatchedViewWithFramePositions(_FrontendBatchedViewBase):
                 target_length=t.target_length,
                 done=t.done,
                 frame_positions=t.frame_positions,
-                mask=mask,
+                spec_loss_mask=spec_loss_mask,
+                binary_loss_mask=binary_loss_mask,
             )
 
         converted = self.dataset.map(lambda x, y: convert(x, y))
