@@ -125,7 +125,9 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 optimizer = tf.train.AdamOptimizer(learning_rate=params.initial_learning_rate, beta1=params.adam_beta1,
                                                    beta2=params.adam_beta2, epsilon=params.adam_eps)
                 global_step = tf.train.get_global_step()
-                train_op = optimizer.minimize(loss, global_step=global_step)
+                gradients, variables = zip(*optimizer.compute_gradients(loss))
+                clipped_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+                train_op = optimizer.apply_gradients(zip(clipped_gradients, variables), global_step=global_step)
                 summary_writer = tf.summary.FileWriter(model_dir)
                 alignment_saver = AlignmentSaver(alignments, global_step, mel_outputs, labels.mel, features.id,
                                                  features.text,
