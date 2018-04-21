@@ -76,6 +76,7 @@ def save_alignment(alignments, text, id, path, info=None):
         ax.set_xlabel(xlabel)
         ax.set_ylabel('Encoder timestep')
         ax.set_title("layer {}".format(i+1))
+        ax.hlines(len(text), xmin=0, xmax=alignment.shape[1], colors=['red'])
     fig.subplots_adjust(wspace=0.4, hspace=0.6)
     fig.suptitle("record ID: {}, input text: ".format(id) + text)
     fig.savefig(path, format='png')
