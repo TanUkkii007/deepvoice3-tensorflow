@@ -33,7 +33,7 @@ def mha_arg(draw, out_channels, kernel_size=integers(2, 10), dilation=integers(1
 
 @composite
 def all_args(draw, batch_size=integers(1, 3), query_channels=integers(2, 20).filter(even_number),
-             in_dim=integers(2, 20), r=integers(1, 1)):
+             in_dim=integers(2, 20), r=integers(1, 4)):
     bs = draw(batch_size)
     _in_dim = draw(in_dim)
     _r = draw(r)
@@ -52,12 +52,13 @@ class DecoderTest(tf.test.TestCase):
     def test_decoder(self, args, num_preattention, preattention_kernel_size, num_mha):
         tf.set_random_seed(12345678)
         query, mha_arg, memory, in_dim, r = args
-        batch_size = 1
+        batch_size = query.shape[0]
         max_positions = 30
         T_query = query.shape[1]
         embed_dim = memory.shape[2]
         T_memory = memory.shape[1]
         assume(T_query < max_positions and T_memory < max_positions)
+        assume(T_query % r == 0)
 
         print("query", query)
         print("memory", memory)
@@ -115,12 +116,18 @@ class DecoderTest(tf.test.TestCase):
         text_positions = tf.zeros(shape=(batch_size, T_memory), dtype=tf.int32) + tf.range(0, T_memory, dtype=tf.int32)
 
         keys, values = tf.constant(memory), tf.constant(memory)
-        out, done, _ = decoder((keys, values), input=tf.constant(query),
-                            frame_positions=frame_positions, text_positions=text_positions)
+        out, done, decoder_state = decoder((keys, values), input=tf.constant(query),
+                                           frame_positions=frame_positions, text_positions=text_positions)
 
-        out_online = decoder_online((keys, values),
-                                    frame_positions=frame_positions, text_positions=text_positions,
-                                    test_inputs=tf.constant(query))
+        out_online, done_online, decoder_state_online = decoder_online((keys, values),
+                                                                       frame_positions=frame_positions,
+                                                                       text_positions=text_positions,
+                                                                       test_inputs=tf.constant(query))
+        alignments = [ds.alignments for ds in decoder_state]
+
+        # (T_query, batch_size, 1, T_memory) -> (batch_size, T_query, T_memory)
+        alignments_online = [tf.transpose(tf.squeeze(s.alignment_history.stack(), axis=2), perm=[1, 0, 2]) for s in
+                             decoder_state_online]
 
         # with self.test_session() as sess:
         #     sess.run(tf.global_variables_initializer())
@@ -131,6 +138,7 @@ class DecoderTest(tf.test.TestCase):
         print(out_online)
         print("-" * 100)
         self.assertAllClose(out, out_online)
+        self.assertAllClose(alignments, alignments_online)
 
     @given(args=all_args(), num_preattention=integers(1, 3), preattention_kernel_size=integers(1, 9),
            num_mha=integers(1, 4))
@@ -138,12 +146,13 @@ class DecoderTest(tf.test.TestCase):
     def test_decoder_inference(self, args, num_preattention, preattention_kernel_size, num_mha):
         tf.set_random_seed(12345678)
         query, mha_arg, memory, in_dim, r = args
-        batch_size = 1
+        batch_size = query.shape[0]
         max_positions = 30
         T_query = query.shape[1]
         embed_dim = memory.shape[2]
         T_memory = memory.shape[1]
         assume(T_query < max_positions and T_memory < max_positions)
+        assume(T_query % r == 0)
         print("query", query)
         print("memory", memory)
 
@@ -159,7 +168,7 @@ class DecoderTest(tf.test.TestCase):
         text_positions = tf.zeros(shape=(batch_size, T_memory), dtype=tf.int32) + tf.range(0, T_memory, dtype=tf.int32)
 
         keys, values = tf.constant(memory), tf.constant(memory)
-        out_online = decoder_online((keys, values),
+        out_online, done_online, decoder_state_online = decoder_online((keys, values),
                                     frame_positions=frame_positions, text_positions=text_positions)
 
         # with self.test_session() as sess:
@@ -168,6 +177,7 @@ class DecoderTest(tf.test.TestCase):
 
         print(out_online)
         print("-" * 100)
+
 
 if __name__ == '__main__':
     tf.enable_eager_execution()

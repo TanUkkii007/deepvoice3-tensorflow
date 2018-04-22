@@ -52,7 +52,8 @@ class ModelTest(tf.test.TestCase):
             target = tf.data.TFRecordDataset(target_files)
 
             frontend = Frontend(source, target, hparams)
-            batched = frontend.prepare().zip_source_and_target().group_by_batch().add_frame_positions().downsample_mel().dataset
+            batched = frontend.prepare().zip_source_and_target().group_by_batch().add_memory_mask(
+                        ).add_frame_positions().add_target_mask().downsample_mel().dataset
             return batched
 
         estimator = SingleSpeakerTTSModel(hparams, model_dir)

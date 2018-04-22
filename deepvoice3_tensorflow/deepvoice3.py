@@ -104,9 +104,9 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
     def alignment_size(self):
         return self.keys.shape[1].value or tf.shape(self.keys)[1]
 
-    def initial_alignment(self, batch_size, target_length, dtype):
-        max_time = self.alignment_size
-        size = tf.stack([batch_size, target_length, max_time], axis=0)
+    def initial_alignment(self, batch_size, dtype):
+        key_length = self.alignment_size
+        size = tf.stack([batch_size, tf.ones(shape=(), dtype=tf.int32), key_length], axis=0)
         return tf.zeros(size, dtype=dtype)
 
     def __call__(self, query, memory_mask=None):
@@ -245,7 +245,7 @@ class CNNAttentionWrapper(CNNCell):
         return CNNAttentionWrapperState(cell_state=self.convolution.zero_state(batch_size, dtype),
                                         time=tf.zeros(shape=[], dtype=tf.int32),
                                         alignments=self.attention.attention_mechanism.initial_alignment(batch_size,
-                                                                                                        self.r, dtype),
+                                                                                                        dtype),
                                         alignment_history=tf.TensorArray(dtype=dtype, size=0, dynamic_size=True))
 
     def build(self, input_shape):
@@ -272,6 +272,7 @@ class CNNAttentionWrapper(CNNCell):
             tf.summary.histogram("query", query)
 
         output, attention_scores = self.attention(query, memory_mask=self.memory_mask)
+        # attention_scores: (batch_size, T_query=1, T_memory)
         alignment_history = state.alignment_history.write(state.time, attention_scores)
         output = (output + residual) * math.sqrt(0.5)
         if self.is_incremental:
@@ -614,7 +615,7 @@ class Decoder(tf.layers.Layer):
         if text_positions is not None:
             w = self.key_position_rate
             text_pos_embed = self.embed_key_positions(text_positions, w)
-                
+
             keys = keys + text_pos_embed
             if self._collect_metrics:
                 tf.summary.histogram("keys", keys)
@@ -737,7 +738,7 @@ class Decoder(tf.layers.Layer):
         condition_function = condition if test_inputs is None else test_condition
         initial_input = self.initial_input(batch_size) if test_inputs is None else tf.expand_dims(test_inputs[:, 0, :],
                                                                                                   axis=1)
-        _, _, _, final_attention_state, _, _, out_online_ta, _ = tf.while_loop(condition_function, body, (
+        _, _, _, final_attention_state, _, _, out_online_ta, done = tf.while_loop(condition_function, body, (
             time, initial_input, self.preattention.zero_state(batch_size, tf.float32),
             attention.zero_state(batch_size, tf.float32),
             self.initial_frame_pos(batch_size), self.last_conv.zero_state(batch_size, tf.float32), outputs_ta,
@@ -747,7 +748,7 @@ class Decoder(tf.layers.Layer):
         output_online = tf.squeeze(output_online, axis=2)
         output_online = tf.transpose(output_online, perm=(1, 0, 2))
 
-        return output_online
+        return output_online, done, final_attention_state
 
     def initial_input(self, batch_size):
         return tf.zeros(shape=(batch_size, 1, self.in_dim * self.r))
