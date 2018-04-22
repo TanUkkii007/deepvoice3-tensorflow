@@ -77,7 +77,7 @@ class Embedding(tf.layers.Layer):
 
 
 class SinusoidalEncodingEmbedding(tf.layers.Layer):
-    def __init__(self, num_embeddings, embedding_dim, trainable=True, name=None, **kwargs):
+    def __init__(self, num_embeddings, embedding_dim, trainable=False, name=None, **kwargs):
         super(SinusoidalEncodingEmbedding, self).__init__(name=name, trainable=trainable, **kwargs)
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
