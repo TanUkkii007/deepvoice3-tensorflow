@@ -59,7 +59,8 @@ hparams = tf.contrib.training.HParams(
     alignment_save_steps=100,
 
     # Evaluation
-    teacher_forcing=False
+    teacher_forcing=False,
+    swap_source=False,
     )
 
 

@@ -31,7 +31,9 @@ def eval(hparams, model_dir, source_files, target_files, checkpoint_path=None):
 
         ).zip_source_and_target(
 
-        ).group_by_batch(
+        )
+        batched = batched.swap_source() if hparams.swap_source else batched
+        batched = batched.group_by_batch(
 
         ).add_memory_mask(
 

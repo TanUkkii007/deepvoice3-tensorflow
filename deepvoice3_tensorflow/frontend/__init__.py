@@ -172,6 +172,22 @@ class FrontendZippedViewBase:
 
         return self.apply(self.dataset.map(lambda x, y: convert(x, y)), self.hparams)
 
+    def swap_source(self):
+        def convert(s: PreparedSourceData, t):
+            return PreparedSourceData(
+                id=s.id,
+                text=s.text2,
+                source=s.source2,
+                source_length=s.source_length2,
+                text_positions=s.text_positions2,
+                text2=s.text,
+                source2=s.source,
+                source_length2=s.source_length,
+                text_positions2=s.text_positions,
+            ), t
+
+        return self.apply(self.dataset.map(lambda x, y: convert(x, y)), self.hparams)
+
     def filter(self, predicate):
         return self.apply(tf.data.Dataset.filter(self.dataset, predicate), self.hparams)
 
