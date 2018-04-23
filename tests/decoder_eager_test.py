@@ -120,7 +120,6 @@ class DecoderTest(tf.test.TestCase):
                                            frame_positions=frame_positions, text_positions=text_positions)
 
         out_online, done_online, decoder_state_online = decoder_online((keys, values),
-                                                                       frame_positions=frame_positions,
                                                                        text_positions=text_positions,
                                                                        test_inputs=tf.constant(query))
         alignments = [ds.alignments for ds in decoder_state]
@@ -169,7 +168,7 @@ class DecoderTest(tf.test.TestCase):
 
         keys, values = tf.constant(memory), tf.constant(memory)
         out_online, done_online, decoder_state_online = decoder_online((keys, values),
-                                    frame_positions=frame_positions, text_positions=text_positions)
+                                                                       text_positions=text_positions)
 
         # with self.test_session() as sess:
         #     sess.run(tf.global_variables_initializer())

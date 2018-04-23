@@ -57,6 +57,9 @@ hparams = tf.contrib.training.HParams(
     save_summary_steps=50,
     log_step_count_steps=1,
     alignment_save_steps=100,
+
+    # Evaluation
+    teacher_forcing=False
     )
 
 

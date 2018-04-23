@@ -43,7 +43,7 @@ def read_training_result(filename):
         alignments = [np.frombuffer(align, dtype=np.float32).reshape([batch_size, src_len, tgt_len]) for align, src_len, tgt_len in
                       zip(alignment, alignment_source_length, alignment_target_length)]
         alignments = [[a[i].T for a in alignments] for i in range(batch_size)]
-        predicted_mels = (np.frombuffer(mel, dtype=np.float32).reshape([mel_len, mel_width]) for mel, mel_len in
+        predicted_mels = (np.frombuffer(mel, dtype=np.float32).reshape([-1, mel_width]) for mel, mel_len in
                 zip(predicted_mel, mel_length))
         ground_truth_mels = (np.frombuffer(mel, dtype=np.float32).reshape([mel_len, mel_width]) for mel, mel_len in
                 zip(ground_truth_mel, mel_length))
@@ -66,7 +66,7 @@ def plot_mel(mel, mel_predicted, filename):
     im = ax.imshow(mel.T, origin="lower bottom", aspect="auto", cmap="magma", vmin=0.0, vmax=0.7)
     fig.colorbar(im, ax=ax)
     ax = fig.add_subplot(2, 1, 2)
-    im = ax.imshow(mel_predicted.T,
+    im = ax.imshow(mel_predicted[:mel.shape[0], :].T,
                origin="lower bottom", aspect="auto", cmap="magma", vmin=0.0, vmax=0.7)
     fig.colorbar(im, ax=ax)
     fig.savefig(filename, format='png')

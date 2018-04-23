@@ -43,7 +43,7 @@ def read_training_result(filename):
         alignments = [np.frombuffer(align, dtype=np.float32).reshape([batch_size, src_len, tgt_len]) for align, src_len, tgt_len in
                       zip(alignment, alignment_source_length, alignment_target_length)]
         alignments = [[a[i].T for a in alignments] for i in range(batch_size)]
-        predicted_mels = (np.frombuffer(mel, dtype=np.float32).reshape([mel_len, mel_width]) for mel, mel_len in
+        predicted_mels = (np.frombuffer(mel, dtype=np.float32).reshape([-1, mel_width]) for mel, mel_len in
                 zip(predicted_mel, mel_length))
         ground_truth_mels = (np.frombuffer(mel, dtype=np.float32).reshape([mel_len, mel_width]) for mel, mel_len in
                 zip(ground_truth_mel, mel_length))
@@ -59,7 +59,7 @@ def read_training_result(filename):
             )
 
 
-def save_alignment(alignments, text, id, path, info=None):
+def save_alignment(alignments, text, _id, path, info=None):
     num_alignment = len(alignments)
     fig = plt.figure(figsize=(12, 16))
     for i, alignment in enumerate(alignments):
@@ -78,7 +78,7 @@ def save_alignment(alignments, text, id, path, info=None):
         ax.set_title("layer {}".format(i+1))
         ax.hlines(len(text), xmin=0, xmax=alignment.shape[1], colors=['red'])
     fig.subplots_adjust(wspace=0.4, hspace=0.6)
-    fig.suptitle("record ID: {}, input text: ".format(id) + text)
+    fig.suptitle(f"record ID: {_id}, input text: {str(text)}")
     fig.savefig(path, format='png')
     plt.close()
 

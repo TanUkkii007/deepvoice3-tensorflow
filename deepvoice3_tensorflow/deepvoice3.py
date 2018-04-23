@@ -604,11 +604,7 @@ class Decoder(tf.layers.Layer):
 
     def _call(self, encoder_out, inputs, text_positions=None, frame_positions=None, memory_mask=None):
         if inputs.shape[-1].value == self.in_dim:
-            original_shape = inputs.shape
-            s = tf.shape(inputs)
-            new_shape = tf.stack([s[0], s[1] // self.r, tf.constant(self.in_dim * self.r, dtype=tf.int32)])
-            inputs = tf.reshape(inputs, shape=new_shape)
-            inputs.set_shape((original_shape[0].value, None, self.in_dim * self.r))
+            inputs = self.reduce_inputs(inputs)
 
         keys, values = encoder_out
 
@@ -669,6 +665,9 @@ class Decoder(tf.layers.Layer):
         return outputs, done, alignments
 
     def _call_incremental(self, encoder_out, text_positions, test_inputs=None):
+        if test_inputs is not None and test_inputs.shape[-1].value == self.in_dim:
+            test_inputs = self.reduce_inputs(test_inputs)
+
         keys, values = encoder_out
         batch_size = keys.shape[0].value
         # position encodings
@@ -689,7 +688,7 @@ class Decoder(tf.layers.Layer):
                                       out_projection_weight_initializer=self.attention_out_projection_weight_initializer,
                                       training=self.training)
 
-        test_input_length = 0 if test_inputs is None else test_inputs.shape[1].value
+        test_input_length = 0 if test_inputs is None else tf.shape(test_inputs)[1]
         # append one element to avoid index overflow
         test_inputs = test_inputs if test_inputs is None else self.append_unused_final_test_input(test_inputs,
                                                                                                   batch_size)
@@ -761,6 +760,14 @@ class Decoder(tf.layers.Layer):
     def append_unused_final_test_input(self, test_input, batch_size):
         final_input = tf.zeros(shape=(batch_size, 1, self.in_dim * self.r))
         return tf.concat([test_input, final_input], axis=1)
+
+    def reduce_inputs(self, inputs):
+        original_shape = inputs.shape
+        s = tf.shape(inputs)
+        new_shape = tf.stack([s[0], s[1] // self.r, tf.constant(self.in_dim * self.r, dtype=tf.int32)])
+        inputs = tf.reshape(inputs, shape=new_shape)
+        inputs.set_shape((original_shape[0].value, None, self.in_dim * self.r))
+        return inputs
 
     def register_metrics(self):
         self.embed_key_positions.register_metrics()

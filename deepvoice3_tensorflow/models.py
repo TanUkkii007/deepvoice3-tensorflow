@@ -1,72 +1,6 @@
 import tensorflow as tf
 from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, DecoderPreNetArgs, MultiHopAttentionArgs
-import os
-import numpy as np
-from typing import List
-from data.tfrecord_utils import write_tfrecord, int64_feature, bytes_feature
-
-
-def write_training_result(global_step: int, id: List[int], text: List[str], predicted_mel: List[np.ndarray],
-                          ground_truth_mel: List[np.ndarray], alignment: List[np.ndarray], filename: str):
-    batch_size = len(ground_truth_mel)
-    raw_predicted_mel = [m.tostring() for m in predicted_mel]
-    raw_ground_truth_mel = [m.tostring() for m in ground_truth_mel]
-    mel_width = ground_truth_mel[0].shape[1]
-    mel_length = [m.shape[0] for m in ground_truth_mel]
-    raw_alignment = [a.tostring() for a in alignment]
-    alignment_source_length = [a.shape[1] for a in alignment]
-    alignment_target_length = [a.shape[2] for a in alignment]
-    example = tf.train.Example(features=tf.train.Features(feature={
-        'global_step': int64_feature([global_step]),
-        'batch_size': int64_feature([batch_size]),
-        'id': int64_feature(id),
-        'text': bytes_feature(text),
-        'predicted_mel': bytes_feature(raw_predicted_mel),
-        'ground_truth_mel': bytes_feature(raw_ground_truth_mel),
-        'mel_length': int64_feature(mel_length),
-        'mel_width': int64_feature([mel_width]),
-        'alignment': bytes_feature(raw_alignment),
-        'alignment_source_length': int64_feature(alignment_source_length),
-        'alignment_target_length': int64_feature(alignment_target_length),
-    }))
-    write_tfrecord(example, filename)
-
-
-class AlignmentSaver(tf.train.SessionRunHook):
-
-    def __init__(self, alignment_tensors, global_step_tensor, predicted_mel_tensor, ground_truth_mel_tensor, id_tensor,
-                 text_tensor, save_steps,
-                 tag_prefix, mode, writer: tf.summary.FileWriter):
-        self.alignment_tensors = alignment_tensors
-        self.global_step_tensor = global_step_tensor
-        self.predicted_mel_tensor = predicted_mel_tensor
-        self.ground_truth_mel_tensor = ground_truth_mel_tensor
-        self.id_tensor = id_tensor
-        self.text_tensor = text_tensor
-        self.save_steps = save_steps
-        self.tag_prefix = tag_prefix
-        self.mode = mode
-        self.writer = writer
-
-    def before_run(self, run_context):
-        return tf.train.SessionRunArgs({
-            "global_step": self.global_step_tensor
-        })
-
-    def after_run(self,
-                  run_context,
-                  run_values):
-        stale_global_step = run_values.results["global_step"]
-        if (stale_global_step + 1) % self.save_steps == 0 or stale_global_step == 0:
-            global_step_value, alignments, predicted_mel, ground_truth_mel, id, text = run_context.session.run(
-                (self.global_step_tensor, self.alignment_tensors, self.predicted_mel_tensor,
-                 self.ground_truth_mel_tensor, self.id_tensor, self.text_tensor))
-            result_filename = "{}_result_step{:09d}.tfrecord".format(self.mode, global_step_value)
-            tf.logging.info("Saving a training result for %d at %s", global_step_value, result_filename)
-            write_training_result(global_step_value, list(id), list(text), list(predicted_mel), list(ground_truth_mel),
-                                  alignments,
-                                  filename=os.path.join(self.writer.get_logdir(), result_filename))
-
+from deepvoice3_tensorflow.hooks import AlignmentSaver
 
 class SingleSpeakerTTSModel(tf.estimator.Estimator):
 
@@ -137,23 +71,23 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[alignment_saver])
 
             if mode == tf.estimator.ModeKeys.EVAL:
+                test_inputs = labels.mel if params.teacher_forcing else None
                 mel_outputs, done_hat, attention_states = decoder((keys, values),
-                                                                  text_positions=features.text_positions)
+                                                                  text_positions=features.text_positions,
+                                                                  test_inputs=test_inputs)
                 # undo reduction
                 mel_outputs = tf.reshape(mel_outputs, shape=(params.batch_size, -1, params.num_mels))
                 alignments = [tf.transpose(tf.squeeze(s.alignment_history.stack(), axis=2), perm=[1, 0, 2]) for s in
                               attention_states]
 
-                # mel_loss = spec_loss(mel_outputs[:, tf.shape(labels.mel)[1], :], labels.mel, labels.spec_loss_mask)
-                # done_loss = binary_loss(done_hat, labels.done, labels.binary_loss_mask)
-                # loss = mel_loss + done_loss
                 summary_writer = tf.summary.FileWriter(model_dir)
                 alignment_saver = AlignmentSaver(alignments, global_step, mel_outputs, labels.mel, features.id,
                                                  features.text,
                                                  save_steps=1,
                                                  tag_prefix="eval_alignment_layer", mode=mode, writer=summary_writer)
                 # ToDo: calculate loss
-                return tf.estimator.EstimatorSpec(mode, loss=tf.constant(0), evaluation_hooks=[alignment_saver])
+                return tf.estimator.EstimatorSpec(mode, loss=tf.constant(0),
+                                                  evaluation_hooks=[alignment_saver])
 
         def spec_loss(y_hat, y, mask, priority_bin=None, priority_w=0):
             l1_loss = tf.abs(y_hat - y)
