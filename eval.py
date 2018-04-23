@@ -10,8 +10,6 @@ options:
     --checkpoint=<path>          Restore model from checkpoint path if given.
     --checkpoint-seq2seq=<path>  Restore seq2seq model from checkpoint path.
     --checkpoint-postnet=<path>  Restore postnet model from checkpoint path.
-    --train-seq2seq-only         Train only seq2seq model.
-    --train-postnet-only         Train only postnet model.
     -h, --help                   Show this help message and exit
 """
 
@@ -23,7 +21,7 @@ from deepvoice3_tensorflow.models import SingleSpeakerTTSModel
 from hparams import hparams, hparams_debug_string
 
 
-def eval(hparams, model_dir, source_files, target_files):
+def eval(hparams, model_dir, source_files, target_files, checkpoint_path=None):
     def eval_input_fn():
         source = tf.data.TFRecordDataset(list(source_files)[:16])
         target = tf.data.TFRecordDataset(list(target_files)[:16])
@@ -48,13 +46,14 @@ def eval(hparams, model_dir, source_files, target_files):
 
     estimator = SingleSpeakerTTSModel(hparams, model_dir)
 
-    eval_metrics = estimator.evaluate(lambda: eval_input_fn())
+    eval_metrics = estimator.evaluate(lambda: eval_input_fn(), checkpoint_path=checkpoint_path)
 
 
 def main():
     args = docopt(__doc__)
     print("Command line args:\n", args)
     checkpoint_dir = args["--checkpoint-dir"]
+    checkpoint_path = args["--checkpoint-seq2seq"]
     data_root = args["--data-root"]
     dataset_name = args["--dataset"]
     assert dataset_name in ["jsut"]
@@ -66,7 +65,7 @@ def main():
     print(hparams_debug_string())
 
     tf.logging.set_verbosity(tf.logging.INFO)
-    eval(hparams, checkpoint_dir, dataset_instance.source_files, dataset_instance.target_files)
+    eval(hparams, checkpoint_dir, dataset_instance.source_files, dataset_instance.target_files, checkpoint_path)
 
 
 if __name__ == '__main__':
