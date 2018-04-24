@@ -14,8 +14,8 @@ jobs:
       - run:
           command: |
             sudo pip3 install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.7.0-cp36-cp36m-linux_x86_64.whl
-            pip install -e ".[train]"
-            pip install -e ".[test]"
+            sudo pip install -e ".[train]"
+            sudo pip install -e ".[test]"
       - save_cache:
           key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
           paths:
