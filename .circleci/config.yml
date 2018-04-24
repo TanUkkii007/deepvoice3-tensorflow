@@ -17,13 +17,16 @@ jobs:
             sudo pip install -e ".[train]"
             sudo pip install -e ".[test]"
       - save_cache:
-          key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+          key: deps9-{{ .Branch }}-{{ checksum "setup.py" }}
           paths:
             - "/usr/local/bin"
             - "/usr/local/lib/python3.6/site-packages"
       - run:
           command: |
-            python -m unittest discover tests/ "*graph_test.py"
+            python -m unittest discover tests/ "*graph_test.py" &&\
+            python -m unittest tests/attention_layer_eager_test.py &&\
+            python -m unittest tests/cnn_cell_eager_test.py &&\
+            python -m unittest tests/decoder_eager_test.py
       - store_test_results:
           path: test-results
       - store_artifacts:
