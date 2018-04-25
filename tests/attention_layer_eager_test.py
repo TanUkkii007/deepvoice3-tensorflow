@@ -101,7 +101,7 @@ class AttentionLayerTest(tf.test.TestCase):
             return tf.less(time, T_query)
 
         def body(time, inputs, state, outputs):
-            btc_one = tf.reshape(inputs[:, time:time + 1, :], shape=(B, -1, C))
+            btc_one = tf.reshape(inputs[:, time:time + 1, :], shape=(B, 1, C))
             input = CNNAttentionWrapperInput(btc_one, frame_pos_embed_incremental)
             out_online, next_states = attention_incremental.apply(input, state)
             return (time + 1, inputs, next_states, outputs.write(time, out_online.query))
@@ -179,11 +179,10 @@ class AttentionLayerTest(tf.test.TestCase):
             return tf.less(time, T_query)
 
         def body(time, inputs, state, outputs):
-            # ToDo: slice time:time+reduction_factor
-            btc_one = tf.reshape(inputs[:, time:time + r, :], shape=(B, -1, C))
+            btc_one = tf.reshape(inputs[:, time:time + 1, :], shape=(B, 1, C))
             input = CNNAttentionWrapperInput(btc_one, frame_pos_embed_incremental)
             out_online, next_states = attention_incremental.apply(input, state)
-            return (time + r, inputs, next_states, outputs.write(time, out_online.query))
+            return (time + 1, inputs, next_states, outputs.write(time, out_online.query))
 
         time = tf.constant(0)
         outputs_ta = tf.TensorArray(dtype=tf.float32, size=T_query, element_shape=tf.TensorShape([B, 1, C]))
