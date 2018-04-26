@@ -24,9 +24,9 @@ jobs:
       - run:
           command: |
             python -m unittest discover tests/ "*graph_test.py" &&\
-            python -m unittest tests/attention_layer_eager_test.py &&\
-            python -m unittest tests/cnn_cell_eager_test.py &&\
-            python -m unittest tests/decoder_eager_test.py
+            python tests/attention_layer_eager_test.py &&\
+            python tests/cnn_cell_eager_test.py &&\
+            python tests/decoder_eager_test.py
       - store_test_results:
           path: test-results
       - store_artifacts:
