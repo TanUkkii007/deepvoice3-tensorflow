@@ -54,7 +54,9 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 mel_outputs = tf.reshape(mel_outputs, shape=(params.batch_size, -1, params.num_mels))
 
                 alignments = [s.alignments for s in attention_states]
-                mel_loss = spec_loss(mel_outputs, labels.mel, labels.spec_loss_mask)
+                r = params.outputs_per_step
+                # drop last unused frame and artificial initial zero frame
+                mel_loss = spec_loss(mel_outputs[:, :-r, :], labels.mel[:, r:, :], labels.spec_loss_mask[:, r:])
                 done_loss = binary_loss(done_hat, labels.done, labels.binary_loss_mask)
                 loss = mel_loss + done_loss
                 optimizer = tf.train.AdamOptimizer(learning_rate=params.initial_learning_rate, beta1=params.adam_beta1,
