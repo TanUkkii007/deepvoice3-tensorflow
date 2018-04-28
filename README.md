@@ -1,5 +1,7 @@
 # deepvoice3-tensorflow
 
+[![CircleCI](https://circleci.com/gh/TanUkkii007/deepvoice3-tensorflow.svg?style=svg)](https://circleci.com/gh/TanUkkii007/deepvoice3-tensorflow)
+
 A tensorflow based implementation of [DeepVoice3](https://arxiv.org/abs/1710.07654).
 
 This project is ported from [the pytorch based DeepVoice3 implementation](https://github.com/r9y9/deepvoice3_pytorch) created by @r9r9.
