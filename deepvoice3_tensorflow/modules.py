@@ -1,5 +1,6 @@
 import tensorflow as tf
-from .ops import causal_conv, noncausal_conv, Conv1dIncremental
+from tensorflow.python.layers import utils
+from .ops import causal_conv, noncausal_conv, conv_transpose_1d, Conv1dIncremental
 from .weight_normalization import WeightNormalization
 from .cnn_cell import CNNCell
 from .positional_concoding import PositionalEncoding
@@ -232,6 +233,66 @@ class NonCausalConv1d(tf.layers.Layer):
 
     def call(self, inputs, **kwargs):
         conv1d_output = noncausal_conv(inputs, self.kernel, self.dilation)
+        ha = self.activation(conv1d_output + self.bias) if self.activation is not None else (
+                conv1d_output + self.bias)
+        return ha
+
+    def register_metrics(self):
+        if self.normalize_weight:
+            self._wn.register_metrics()
+        tf.summary.histogram(self.bias.name, self.bias)
+
+
+class NonCausalConvTransposed1d(tf.layers.Layer):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, activation,
+                 dropout=0.0, kernel_initializer=None, bias_initializer=None,
+                 normalize_weight=False, trainable=True, name=None):
+        super(NonCausalConvTransposed1d, self).__init__(name=name, trainable=trainable)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.activation = activation
+        self.dropout = dropout
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.normalize_weight = normalize_weight
+
+    def build(self, input_shape):
+        assert input_shape[2].value == self.in_channels
+        kernel_size = self.kernel_size
+        in_channels = self.in_channels
+        out_channels = self.out_channels
+
+        std_factor = 4.0 if self.normalize_weight else 1.0
+        std = math.sqrt((std_factor * (1.0 - self.dropout)) / (float(kernel_size) * in_channels))
+        kernel_initializer = tf.truncated_normal_initializer(mean=0.,
+                                                             stddev=std) if self.kernel_initializer is None else self.kernel_initializer
+        kernel_trainability = not self.normalize_weight
+        self.kernel = self.add_variable("kernel",
+                                        shape=[kernel_size, in_channels, out_channels],
+                                        initializer=kernel_initializer,
+                                        trainable=kernel_trainability)
+        if self.normalize_weight:
+            self._wn = WeightNormalization(self.kernel)
+            self.kernel = self._wn(self.kernel)
+        bias_initializer = tf.zeros_initializer() if self.bias_initializer is None else self.bias_initializer
+        self.bias = self.add_variable("bias",
+                                      shape=(1, 1, out_channels),
+                                      initializer=bias_initializer)
+        self.built = True
+
+    def call(self, inputs, **kwargs):
+        out_height = utils.deconv_output_length(1,
+                                   self.kernel_size,
+                                   "valid",
+                                   self.stride)
+        out_width = utils.deconv_output_length(tf.shape(inputs)[1],
+                                   self.kernel_size,
+                                   "valid",
+                                   self.stride)
+        output_shape = (tf.shape(inputs)[0], self.out_channels, out_height, out_width)
+        conv1d_output = conv_transpose_1d(inputs, self.kernel, output_shape, self.stride)
         ha = self.activation(conv1d_output + self.bias) if self.activation is not None else (
                 conv1d_output + self.bias)
         return ha

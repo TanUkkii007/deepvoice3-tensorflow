@@ -44,6 +44,7 @@ hparams = tf.contrib.training.HParams(
     use_memory_mask=True,
     trainable_positional_encodings=False,
     freeze_embedding=False,
+    converter_channels=256,
 
     # Training
     batch_size=16,

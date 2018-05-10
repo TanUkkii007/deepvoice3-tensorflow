@@ -1,8 +1,9 @@
 import tensorflow as tf
 import math
+from functools import reduce
 from collections import namedtuple
-from .modules import Linear, Embedding, Conv1d, NonCausalConv1d, Conv1dGLU, NonCausalConv1dGLU, \
-    SinusoidalEncodingEmbedding
+from .modules import Linear, Embedding, Conv1d, NonCausalConv1d, NonCausalConvTransposed1d, Conv1dGLU, \
+    NonCausalConv1dGLU, SinusoidalEncodingEmbedding
 from .cnn_cell import CNNCell, MultiCNNCell
 from tensorflow.contrib.seq2seq.python.ops.attention_wrapper import AttentionMechanism
 from tensorflow.python.util import nest
@@ -775,3 +776,43 @@ class Decoder(tf.layers.Layer):
         self.preattention.register_metrics()
         self.fc.register_metrics()
         self.last_conv.register_metrics()
+
+
+class Converter(tf.layers.Layer):
+
+    def __init__(self, in_dim, out_dim, convolutions=((256, 5, 1),) * 4,
+                 time_upsampling=1,
+                 dropout=0.1,
+                 trainable=True,
+                 name=None, **kwargs):
+        super(Converter, self).__init__(name=name, trainable=trainable, **kwargs)
+
+        in_channels = convolutions[0][0]
+        out_channels = convolutions[-1][0]
+        self.adjustment_layer = NonCausalConv1d(in_dim, in_channels, kernel_size=1, dilation=1, activation=None,
+                                                dropout=dropout)
+        self.upsampling = [(
+                           NonCausalConvTransposed1d(in_channels, in_channels, kernel_size=2, stride=1, activation=None,
+                                                     dropout=dropout),
+                           NonCausalConv1dGLU(in_channels, in_channels, kernel_size=3, dilation=1, dropout=dropout),
+                           NonCausalConv1dGLU(in_channels, in_channels, kernel_size=3, dilation=3, dropout=dropout))
+                           for _ in range(time_upsampling)]
+        self.convolutions = [NonCausalConv1dGLU(in_channels, out_channels, kernel_size=3, dilation=1, dropout=dropout)
+                             for (out_channels, kernel_size, dilation) in convolutions]
+        self.out_layer = NonCausalConv1d(out_channels, out_dim, kernel_size=1, dilation=1, activation=None,
+                                         dropout=dropout)
+
+    def build(self, _):
+        self.built = True
+
+    def call(self, inputs):
+        adjustment_out = self.adjustment_layer(inputs)
+
+        def upsample(input, layers):
+            l1, l2, l3 = layers
+            return l3(l2(l1(input)))
+
+        upsample_out = reduce(upsample, self.upsampling, adjustment_out)
+        conv_out = reduce(lambda x, f: f(x), self.convolutions, upsample_out)
+        output = self.out_layer(conv_out)
+        return tf.nn.sigmoid(output)

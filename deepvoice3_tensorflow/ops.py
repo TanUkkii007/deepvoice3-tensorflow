@@ -1,40 +1,6 @@
 import tensorflow as tf
 
 
-def time_to_batch(value, dilation, name='time_to_batch'):
-    '''
-
-    :param value: (B, T, C)
-    :param dilation:
-    :param name:
-    :return: (B * dilation, T / dilation, C)
-    '''
-    with tf.name_scope(name):
-        shape = tf.shape(value)
-        shape_t, shape_b, shape_c = shape[0], shape[1], shape[2]
-        pad_elements = dilation - 1 - (shape_b + dilation - 1) % dilation
-        padded = tf.pad(value, [[0, 0], [0, pad_elements], [0, 0]])
-        reshaped = tf.reshape(padded, [-1, dilation, shape_c])
-        transposed = tf.transpose(reshaped, perm=[1, 0, 2])
-        return tf.reshape(transposed, [shape_t * dilation, -1, shape_c])
-
-
-def batch_to_time(value, dilation, name='batch_to_time'):
-    '''
-
-    :param value: (B, T, C)
-    :param dilation:
-    :param name:
-    :return: (B / dilation, T * dilation, C)
-    '''
-    with tf.name_scope(name):
-        shape = tf.shape(value)
-        shape_b, shape_t, shape_c = shape[0], shape[1], shape[2]
-        prepared = tf.reshape(value, [dilation, -1, shape_c])
-        transposed = tf.transpose(prepared, perm=[1, 0, 2])  # (B * T / dilation, dilation, C)
-        return tf.reshape(transposed, [tf.div(shape_b, dilation), -1, shape_c])
-
-
 def causal_conv(value, filter_, dilation, name='causal_conv'):
     '''
 
@@ -53,8 +19,24 @@ def causal_conv(value, filter_, dilation, name='causal_conv'):
         result = tf.slice(restored, [0, 0, 0], [-1, out_width, -1])
         return result
 
+
 def noncausal_conv(value, filter_, dilation):
     return tf.nn.convolution(value, filter_, padding='SAME', dilation_rate=[dilation])
+
+
+def conv_transpose_1d(value, filter_, output_shape, stride):
+    spatial_start_dim = 1
+    strides = [1, 1, stride, 1]
+    value = tf.expand_dims(value, spatial_start_dim)
+    filters = tf.expand_dims(filter_, 0)
+    conv1d_output = tf.nn.conv2d_transpose(
+        value,
+        filters,
+        output_shape,
+        strides,
+        padding="VALID")
+    result = tf.squeeze(conv1d_output, [spatial_start_dim])
+    return result
 
 
 # ToDo: do not use tf.layers.Layer. see tf.nn.convolution.
@@ -126,4 +108,3 @@ class Conv1dIncremental(tf.layers.Layer):
         kw = self.kernel_size
         input_buffer = tf.zeros(shape=[self.batch_size, kw + (kw - 1) * (self.dilation - 1), self.shape_c])
         return input_buffer
-
