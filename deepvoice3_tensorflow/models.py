@@ -42,12 +42,6 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                               is_incremental=is_incremental,
                               training=training)
 
-            h = params.converter_channels
-            converter = Converter(params.num_mels,
-                                  params.fft_size // 2 + 1,
-                                  time_upsampling=max(params.downsample_step // params.outputs_per_step, 1),
-                                  convolutions=[(h, k, 1), (h, k, 3), (h, k, 1), (h, k, 3)])
-
             keys, values = encoder(features.source, text_positions=features.text_positions)
 
             global_step = tf.train.get_global_step()
@@ -61,14 +55,11 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                 # undo reduction
                 mel_outputs = tf.reshape(mel_outputs, shape=(params.batch_size, -1, params.num_mels))
 
-                linear_output = converter(labels.mel[:, r:, :])
-
                 alignments = [s.alignments for s in attention_states]
                 # drop last unused frame and artificial initial zero frame
                 mel_loss = spec_loss(mel_outputs[:, :-r, :], labels.mel[:, r:, :], labels.spec_loss_mask[:, r:])
-                linear_loss = spec_loss(linear_output, labels.spec, labels.spec_loss_mask[:, r:])
                 done_loss = binary_loss(done_hat, labels.done, labels.binary_loss_mask)
-                loss = mel_loss + linear_loss + done_loss
+                loss = mel_loss + done_loss
                 optimizer = tf.train.AdamOptimizer(learning_rate=params.initial_learning_rate, beta1=params.adam_beta1,
                                                    beta2=params.adam_beta2, epsilon=params.adam_eps)
                 gradients, variables = zip(*optimizer.compute_gradients(loss))
@@ -79,7 +70,7 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
                                                  features.text,
                                                  params.alignment_save_steps,
                                                  "alignment_layer", mode, summary_writer)
-                add_stats(encoder, decoder, mel_loss, linear_loss, done_loss)
+                add_stats(encoder, decoder, mel_loss, done_loss)
                 return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[alignment_saver])
 
             if mode == tf.estimator.ModeKeys.EVAL:
@@ -114,9 +105,8 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
         def binary_loss(done_hat, done, mask):
             return tf.losses.sigmoid_cross_entropy(done, tf.squeeze(done_hat, axis=-1), weights=mask)
 
-        def add_stats(encoder, decoder, mel_loss, linear_loss, done_loss):
+        def add_stats(encoder, decoder, mel_loss, done_loss):
             tf.summary.scalar("mel_loss", mel_loss)
-            tf.summary.scalar("linear_loss", linear_loss)
             tf.summary.scalar("done_loss", done_loss)
             encoder.register_metrics()
             decoder.register_metrics()
