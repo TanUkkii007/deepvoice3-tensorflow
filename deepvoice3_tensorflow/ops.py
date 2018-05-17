@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python.ops.nn_ops import conv1d_transpose
 
 
 def causal_conv(value, filter_, dilation, name='causal_conv'):
@@ -24,19 +25,8 @@ def noncausal_conv(value, filter_, dilation):
     return tf.nn.convolution(value, filter_, padding='SAME', dilation_rate=[dilation])
 
 
-def conv_transpose_1d(value, filter_, output_shape, stride):
-    spatial_start_dim = 1
-    strides = [1, 1, stride, 1]
-    value = tf.expand_dims(value, spatial_start_dim)
-    filters = tf.expand_dims(filter_, 0)
-    conv1d_output = tf.nn.conv2d_transpose(
-        value,
-        filters,
-        output_shape,
-        strides,
-        padding="VALID")
-    result = tf.squeeze(conv1d_output, [spatial_start_dim])
-    return result
+def conv_transpose_1d(value, filter_, output_shape, stride, padding="SAME"):
+    return conv1d_transpose(value, filter_, output_shape, stride, padding)
 
 
 # ToDo: do not use tf.layers.Layer. see tf.nn.convolution.

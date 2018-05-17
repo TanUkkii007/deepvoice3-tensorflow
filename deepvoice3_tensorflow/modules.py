@@ -59,9 +59,9 @@ class Embedding(tf.layers.Layer):
 
     def build(self, _):
         self.weight = self.add_variable("weight", shape=(self.num_embeddings, self.embedding_dim),
-                                   dtype=tf.float32,
-                                   initializer=self.weight_initializer,
-                                   trainable=False)
+                                        dtype=tf.float32,
+                                        initializer=self.weight_initializer,
+                                        trainable=False)
         if self.normalize_weight:
             self._wn = WeightNormalization(self.weight)
             self.weight = self._wn(self.weight)
@@ -283,16 +283,12 @@ class NonCausalConvTransposed1d(tf.layers.Layer):
         self.built = True
 
     def call(self, inputs, **kwargs):
-        out_height = utils.deconv_output_length(1,
-                                   self.kernel_size,
-                                   "valid",
-                                   self.stride)
         out_width = utils.deconv_output_length(tf.shape(inputs)[1],
-                                   self.kernel_size,
-                                   "valid",
-                                   self.stride)
-        output_shape = (tf.shape(inputs)[0], self.out_channels, out_height, out_width)
-        conv1d_output = conv_transpose_1d(inputs, self.kernel, output_shape, self.stride)
+                                               self.kernel_size,
+                                               "valid",
+                                               self.stride)
+        output_shape = (tf.shape(inputs)[0], out_width, self.out_channels)
+        conv1d_output = conv_transpose_1d(inputs, self.kernel, output_shape, self.stride, padding="VALID")
         ha = self.activation(conv1d_output + self.bias) if self.activation is not None else (
                 conv1d_output + self.bias)
         return ha
