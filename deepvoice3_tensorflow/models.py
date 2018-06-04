@@ -117,7 +117,7 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
             params=params, warm_start_from=warm_start_from)
 
 
-class DeepVice3PostNetModel(tf.estimator.Estimator):
+class DeepVoice3ConverterModel(tf.estimator.Estimator):
 
     def __init__(self, params, model_dir=None, config=None, warm_start_from=None):
         def model_fn(features, labels, mode, params):
@@ -177,7 +177,7 @@ class DeepVice3PostNetModel(tf.estimator.Estimator):
                                                   eval_metric_ops=eval_metric_ops,
                                                   evaluation_hooks=[metrics_saver])
 
-        super(DeepVice3PostNetModel, self).__init__(
+        super(DeepVoice3ConverterModel, self).__init__(
             model_fn=model_fn, model_dir=model_dir, config=config,
             params=params, warm_start_from=warm_start_from)
 
