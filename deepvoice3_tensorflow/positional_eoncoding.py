@@ -37,6 +37,7 @@ class PositionalEncoding(object):
         def value_at(position, index):
             return position_rate * position / np.power(10000, 2 * (index // 2) / dimension)
 
+        # ToDo: Use individual n_positions that are different at each record in batch
         values = [[
             value_at(pos, i) for i in
             range(dimension)

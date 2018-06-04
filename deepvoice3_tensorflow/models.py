@@ -1,6 +1,6 @@
 import tensorflow as tf
 from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, Converter, DecoderPreNetArgs, MultiHopAttentionArgs
-from deepvoice3_tensorflow.hooks import AlignmentSaver
+from deepvoice3_tensorflow.hooks import AlignmentSaver, ConverterMetricsSaver
 
 
 class SingleSpeakerTTSModel(tf.estimator.Estimator):
@@ -115,3 +115,99 @@ class SingleSpeakerTTSModel(tf.estimator.Estimator):
         super(SingleSpeakerTTSModel, self).__init__(
             model_fn=model_fn, model_dir=model_dir, config=config,
             params=params, warm_start_from=warm_start_from)
+
+
+class DeepVice3PostNetModel(tf.estimator.Estimator):
+
+    def __init__(self, params, model_dir=None, config=None, warm_start_from=None):
+        def model_fn(features, labels, mode, params):
+            is_training = mode == tf.estimator.ModeKeys.TRAIN
+            is_validation = mode == tf.estimator.ModeKeys.EVAL
+
+            time_upsampling = max(params.downsample_step // params.outputs_per_step, 1)
+            c = params.converter_channels
+            k = params.converter_kernel_size
+            n = params.converter_layers
+
+            converter = Converter(in_dim=params.num_mels,
+                                  out_dim=params.fft_size // 2 + 1,
+                                  convolutions=((c, k, 1),) * n,
+                                  time_upsampling=time_upsampling,
+                                  dropout=params.dropout)
+
+            linear_output = converter(features.mel)
+
+            global_step = tf.train.get_global_step()
+
+            if mode is not tf.estimator.ModeKeys.PREDICT:
+                linear_loss = self.spec_loss(linear_output, labels.spec,
+                                             labels.spec_loss_mask)
+                loss = linear_loss
+
+            if is_training:
+                lr = self.learning_rate_decay(
+                    params.initial_learning_rate, global_step) if params.decay_learning_rate else tf.convert_to_tensor(
+                    params.initial_learning_rate)
+                optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=params.adam_beta1,
+                                                   beta2=params.adam_beta2, epsilon=params.adam_eps)
+
+                gradients, variables = zip(*optimizer.compute_gradients(loss))
+                clipped_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+                self.add_training_stats(linear_loss, lr)
+                summary_writer = tf.summary.FileWriter(model_dir)
+                metrics_saver = ConverterMetricsSaver(global_step, linear_output, labels.spec,
+                                                      labels.target_length,
+                                                      features.id,
+                                                      params.alignment_save_steps,
+                                                      mode, summary_writer)
+
+                train_op = optimizer.apply_gradients(zip(clipped_gradients, variables), global_step=global_step)
+                return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op,
+                                                  training_hooks=[metrics_saver])
+
+            if is_validation:
+                eval_metric_ops = self.get_validation_metrics(linear_loss)
+                summary_writer = tf.summary.FileWriter(model_dir)
+                metrics_saver = ConverterMetricsSaver(global_step, linear_output, labels.spec,
+                                                      labels.target_length,
+                                                      features.id,
+                                                      1,
+                                                      mode, summary_writer)
+                return tf.estimator.EstimatorSpec(mode, loss=loss,
+                                                  eval_metric_ops=eval_metric_ops,
+                                                  evaluation_hooks=[metrics_saver])
+
+        super(DeepVice3PostNetModel, self).__init__(
+            model_fn=model_fn, model_dir=model_dir, config=config,
+            params=params, warm_start_from=warm_start_from)
+
+    @staticmethod
+    def spec_loss(y_hat, y, mask, n_priority_freq=None, priority_w=0):
+        l1_loss = tf.abs(y_hat - y)
+
+        # Priority L1 loss
+        if n_priority_freq is not None and priority_w > 0:
+            priority_loss = tf.abs(y_hat[:, :, :n_priority_freq] - y[:, :, :n_priority_freq])
+            l1_loss = (1 - priority_w) * l1_loss + priority_w * priority_loss
+
+        return tf.losses.compute_weighted_loss(l1_loss, weights=tf.expand_dims(mask, axis=2))
+
+    @staticmethod
+    def learning_rate_decay(init_rate, global_step):
+        warmup_steps = 4000.0
+        step = tf.to_float(global_step + 1)
+        return init_rate * warmup_steps ** 0.5 * tf.minimum(step * warmup_steps ** -1.5, step ** -0.5)
+
+    @staticmethod
+    def add_training_stats(linear_loss, learning_rate):
+        if linear_loss is not None:
+            tf.summary.scalar("linear_loss", linear_loss)
+        tf.summary.scalar("learning_rate", learning_rate)
+        return tf.summary.merge_all()
+
+    @staticmethod
+    def get_validation_metrics(linear_loss):
+        metrics = {}
+        if linear_loss is not None:
+            metrics["linear_loss"] = tf.metrics.mean(linear_loss)
+        return metrics

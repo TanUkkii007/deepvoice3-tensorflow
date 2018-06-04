@@ -12,9 +12,11 @@ import tensorflow as tf
 from collections import namedtuple
 import matplotlib
 import os
+from data.metrics import plot_mel
 
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+
 
 class TrainingResult(
     namedtuple("TrainingResult",
@@ -40,13 +42,14 @@ def read_training_result(filename):
         alignment_target_length = example.features.feature['alignment_target_length'].int64_list.value
 
         texts = (t.decode('utf-8') for t in text)
-        alignments = [np.frombuffer(align, dtype=np.float32).reshape([batch_size, src_len, tgt_len]) for align, src_len, tgt_len in
+        alignments = [np.frombuffer(align, dtype=np.float32).reshape([batch_size, src_len, tgt_len]) for
+                      align, src_len, tgt_len in
                       zip(alignment, alignment_source_length, alignment_target_length)]
         alignments = [[a[i].T for a in alignments] for i in range(batch_size)]
         predicted_mels = (np.frombuffer(mel, dtype=np.float32).reshape([-1, mel_width]) for mel, mel_len in
-                zip(predicted_mel, mel_length))
+                          zip(predicted_mel, mel_length))
         ground_truth_mels = (np.frombuffer(mel, dtype=np.float32).reshape([mel_len, mel_width]) for mel, mel_len in
-                zip(ground_truth_mel, mel_length))
+                             zip(ground_truth_mel, mel_length))
 
         for id, text, align, pred_mel, gt_mel in zip(id, texts, alignments, predicted_mels, ground_truth_mels):
             yield TrainingResult(
@@ -59,20 +62,6 @@ def read_training_result(filename):
             )
 
 
-def plot_mel(mel, mel_predicted, filename):
-    from matplotlib import pylab as plt
-    fig = plt.figure(figsize=(16, 10))
-    ax = fig.add_subplot(2, 1, 1)
-    im = ax.imshow(mel.T, origin="lower bottom", aspect="auto", cmap="magma", vmin=0.0, vmax=0.7)
-    fig.colorbar(im, ax=ax)
-    ax = fig.add_subplot(2, 1, 2)
-    im = ax.imshow(mel_predicted[:mel.shape[0], :].T,
-               origin="lower bottom", aspect="auto", cmap="magma", vmin=0.0, vmax=0.7)
-    fig.colorbar(im, ax=ax)
-    fig.savefig(filename, format='png')
-    plt.close()
-
-
 if __name__ == "__main__":
     args = docopt(__doc__)
     filename = args["<filename>"]
@@ -82,4 +71,5 @@ if __name__ == "__main__":
     output_filename = prefix + output_base_filename + "_{}.png"
 
     for result in read_training_result(filename):
-        plot_mel(result.ground_truth_mel, result.predicted_mel, os.path.join(output_dir, output_filename).format(result.id))
+        plot_mel(result.ground_truth_mel, result.predicted_mel,
+                 os.path.join(output_dir, output_filename).format(result.id))

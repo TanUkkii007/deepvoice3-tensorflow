@@ -3,7 +3,7 @@ from tensorflow.python.layers import utils
 from .ops import causal_conv, noncausal_conv, conv_transpose_1d, Conv1dIncremental
 from .weight_normalization import WeightNormalization
 from .cnn_cell import CNNCell
-from .positional_concoding import PositionalEncoding
+from .positional_eoncoding import PositionalEncoding
 import math
 
 

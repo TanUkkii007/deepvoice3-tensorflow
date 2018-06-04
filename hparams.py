@@ -44,7 +44,10 @@ hparams = tf.contrib.training.HParams(
     use_memory_mask=True,
     trainable_positional_encodings=False,
     freeze_embedding=False,
+    ## Converter
     converter_channels=256,
+    converter_kernel_size=5,
+    converter_layers=5,
 
     # Training
     batch_size=16,
@@ -52,6 +55,7 @@ hparams = tf.contrib.training.HParams(
     batch_bucket_width=40,
     batch_num_buckets=50,
     initial_learning_rate=1e-4,  # 0.0001,
+    decay_learning_rate=False,
     adam_beta1=0.5,
     adam_beta2=0.9,
     adam_eps=1e-6,

@@ -151,7 +151,7 @@ class ScaledDotProductAttentionMechanism(AttentionMechanism):
 
 
 class AttentionLayer(tf.layers.Layer):
-    def __init__(self, attention_mechanism, conv_channels, dropout=1.0, query_projection_weight_initializer=None,
+    def __init__(self, attention_mechanism, conv_channels, dropout=0.0, query_projection_weight_initializer=None,
                  out_projection_weight_initializer=None, trainable=True,
                  name=None, **kwargs):
         super(AttentionLayer, self).__init__(name=name, trainable=trainable, **kwargs)
