@@ -7,5 +7,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//deepvoice3:deepvoice3",
+        "//data:data",
     ],
 )
