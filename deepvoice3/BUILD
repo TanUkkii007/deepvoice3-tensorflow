@@ -3,7 +3,7 @@ package(
 )
 
 py_library(
-    name = "deepvoice3_tensorflow",
+    name = "deepvoice3",
     srcs = glob(
         ["*.py"],
         exclude = [],
