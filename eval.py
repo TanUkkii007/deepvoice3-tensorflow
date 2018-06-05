@@ -16,8 +16,8 @@ options:
 from docopt import docopt
 import tensorflow as tf
 import importlib
-from deepvoice3_tensorflow.frontend import Frontend
-from deepvoice3_tensorflow.models import SingleSpeakerTTSModel
+from deepvoice3.frontend import Frontend
+from deepvoice3.models import SingleSpeakerTTSModel
 from hparams import hparams, hparams_debug_string
 
 

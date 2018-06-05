@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import os
-from deepvoice3_tensorflow.frontend import Frontend, _lcm
+from deepvoice3.frontend import Frontend, _lcm
 
 
 class FrontendTest(tf.test.TestCase):

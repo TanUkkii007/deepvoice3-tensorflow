@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume, HealthCheck
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPreNetArgs
+from deepvoice3.deepvoice3 import Decoder, MultiHopAttentionArgs, DecoderPreNetArgs
 
 even_number = lambda x: x % 2 == 0
 

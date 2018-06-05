@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.modules import Linear
+from deepvoice3.modules import Linear
 
 @composite
 def input_tensor(draw, b_size=integers(2, 5), input_length_size=integers(1, 20), in_features_size=integers(1, 20), out_features_size=integers(1, 10), elements=integers(-5, 5)):

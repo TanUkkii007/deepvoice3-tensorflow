@@ -1,6 +1,6 @@
 import tensorflow as tf
-from deepvoice3_tensorflow.deepvoice3 import Encoder, Decoder, Converter, DecoderPreNetArgs, MultiHopAttentionArgs
-from deepvoice3_tensorflow.hooks import AlignmentSaver, ConverterMetricsSaver
+from deepvoice3.deepvoice3 import Encoder, Decoder, Converter, DecoderPreNetArgs, MultiHopAttentionArgs
+from deepvoice3.hooks import AlignmentSaver, ConverterMetricsSaver
 
 
 class SingleSpeakerTTSModel(tf.estimator.Estimator):

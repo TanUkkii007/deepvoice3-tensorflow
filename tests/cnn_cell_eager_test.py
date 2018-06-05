@@ -5,8 +5,8 @@ import math
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.modules import Conv1dGLU
-from deepvoice3_tensorflow.cnn_cell import MultiCNNCell
+from deepvoice3.modules import Conv1dGLU
+from deepvoice3.cnn_cell import MultiCNNCell
 
 
 @composite

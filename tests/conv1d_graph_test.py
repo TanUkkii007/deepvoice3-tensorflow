@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from hypothesis import given, settings, unlimited
 from hypothesis.strategies import integers
-from deepvoice3_tensorflow.modules import Conv1d
+from deepvoice3.modules import Conv1d
 
 
 def curried_leaky_relu(alpha):

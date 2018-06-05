@@ -1,5 +1,5 @@
 import tensorflow as tf
-from deepvoice3_tensorflow.positional_eoncoding import PositionalEncoding
+from deepvoice3.positional_eoncoding import PositionalEncoding
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers
 import numpy as np

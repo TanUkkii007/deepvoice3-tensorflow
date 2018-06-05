@@ -1,8 +1,8 @@
 import tensorflow as tf
 import os
 import tempfile
-from deepvoice3_tensorflow.models import SingleSpeakerTTSModel
-from deepvoice3_tensorflow.frontend import Frontend
+from deepvoice3.models import SingleSpeakerTTSModel
+from deepvoice3.frontend import Frontend
 
 
 class ModelTest(tf.test.TestCase):

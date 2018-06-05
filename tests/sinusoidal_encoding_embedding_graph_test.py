@@ -1,5 +1,5 @@
 import tensorflow as tf
-from deepvoice3_tensorflow.modules import SinusoidalEncodingEmbedding
+from deepvoice3.modules import SinusoidalEncodingEmbedding
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers
 import numpy as np

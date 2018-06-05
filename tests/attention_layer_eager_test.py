@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, settings, unlimited, assume
 from hypothesis.strategies import integers, floats, composite
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer, CNNAttentionWrapper, \
+from deepvoice3.deepvoice3 import ScaledDotProductAttentionMechanism, AttentionLayer, CNNAttentionWrapper, \
     MultiHopAttention, MultiHopAttentionArgs, CNNAttentionWrapperInput
 from tensorflow.python.util import nest
 

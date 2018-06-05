@@ -4,7 +4,7 @@ import uuid
 from hypothesis import given, assume, settings, unlimited
 from hypothesis.strategies import integers
 from hypothesis.extra.numpy import arrays
-from deepvoice3_tensorflow.weight_normalization import weight_normalization, WeightNormalization
+from deepvoice3.weight_normalization import weight_normalization, WeightNormalization
 
 
 class WeightNormalizationTest(tf.test.TestCase):

@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from hypothesis import given, assume, settings, unlimited
 from hypothesis.strategies import integers
-from deepvoice3_tensorflow.ops import causal_conv, Conv1dIncremental
+from deepvoice3.ops import causal_conv, Conv1dIncremental
 
 
 class Conv1dIncrementalTest(tf.test.TestCase):
