@@ -12,9 +12,11 @@ import tensorflow as tf
 from collections import namedtuple
 import matplotlib
 import os
+from data.metrics import save_alignment
 
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+
 
 class TrainingResult(
     namedtuple("TrainingResult",
@@ -40,13 +42,14 @@ def read_training_result(filename):
         alignment_target_length = example.features.feature['alignment_target_length'].int64_list.value
 
         texts = (t.decode('utf-8') for t in text)
-        alignments = [np.frombuffer(align, dtype=np.float32).reshape([batch_size, src_len, tgt_len]) for align, src_len, tgt_len in
+        alignments = [np.frombuffer(align, dtype=np.float32).reshape([batch_size, src_len, tgt_len]) for
+                      align, src_len, tgt_len in
                       zip(alignment, alignment_source_length, alignment_target_length)]
         alignments = [[a[i].T for a in alignments] for i in range(batch_size)]
         predicted_mels = (np.frombuffer(mel, dtype=np.float32).reshape([-1, mel_width]) for mel, mel_len in
-                zip(predicted_mel, mel_length))
+                          zip(predicted_mel, mel_length))
         ground_truth_mels = (np.frombuffer(mel, dtype=np.float32).reshape([mel_len, mel_width]) for mel, mel_len in
-                zip(ground_truth_mel, mel_length))
+                             zip(ground_truth_mel, mel_length))
 
         for id, text, align, pred_mel, gt_mel in zip(id, texts, alignments, predicted_mels, ground_truth_mels):
             yield TrainingResult(
@@ -59,30 +62,6 @@ def read_training_result(filename):
             )
 
 
-def save_alignment(alignments, text, _id, path, info=None):
-    num_alignment = len(alignments)
-    fig = plt.figure(figsize=(12, 16))
-    for i, alignment in enumerate(alignments):
-        ax = fig.add_subplot(num_alignment, 1, i + 1)
-        im = ax.imshow(
-            alignment,
-            aspect='auto',
-            origin='lower',
-            interpolation='none')
-        fig.colorbar(im, ax=ax)
-        xlabel = 'Decoder timestep'
-        if info is not None:
-            xlabel += '\n\n' + info
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel('Encoder timestep')
-        ax.set_title("layer {}".format(i+1))
-        ax.hlines(len(text), xmin=0, xmax=alignment.shape[1], colors=['red'])
-    fig.subplots_adjust(wspace=0.4, hspace=0.6)
-    fig.suptitle(f"record ID: {_id}, input text: {str(text)}")
-    fig.savefig(path, format='png')
-    plt.close()
-
-
 if __name__ == "__main__":
     args = docopt(__doc__)
     filename = args["<filename>"]
@@ -92,4 +71,5 @@ if __name__ == "__main__":
     output_filename = prefix + output_base_filename + "_{}.png"
 
     for result in read_training_result(filename):
-        save_alignment(result.alignments, result.text, result.id, os.path.join(output_dir, output_filename).format(result.id))
+        save_alignment(result.alignments, result.text, result.id,
+                       os.path.join(output_dir, output_filename).format(result.id))

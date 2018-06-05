@@ -25,3 +25,28 @@ def plot_spec(spec, spec_predicted, _id, global_step, filename):
     fig.suptitle(f"record ID: {_id}\nglobal step: {global_step}")
     fig.savefig(filename, format='png')
     plt.close()
+
+
+def save_alignment(alignments, text, _id, path, info=None):
+    from matplotlib import pylab as plt
+    num_alignment = len(alignments)
+    fig = plt.figure(figsize=(12, 16))
+    for i, alignment in enumerate(alignments):
+        ax = fig.add_subplot(num_alignment, 1, i + 1)
+        im = ax.imshow(
+            alignment,
+            aspect='auto',
+            origin='lower',
+            interpolation='none')
+        fig.colorbar(im, ax=ax)
+        xlabel = 'Decoder timestep'
+        if info is not None:
+            xlabel += '\n\n' + info
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel('Encoder timestep')
+        ax.set_title("layer {}".format(i+1))
+        ax.hlines(len(text), xmin=0, xmax=alignment.shape[1], colors=['red'])
+    fig.subplots_adjust(wspace=0.4, hspace=0.6)
+    fig.suptitle(f"record ID: {_id}, input text: {str(text)}")
+    fig.savefig(path, format='png')
+    plt.close()

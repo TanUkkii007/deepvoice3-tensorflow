@@ -3,8 +3,7 @@ import os
 import numpy as np
 from typing import List
 from data.tfrecord_utils import write_tfrecord, int64_feature, bytes_feature
-from visualize_alignment import save_alignment
-from data.metrics import plot_mel, plot_spec
+from data.metrics import plot_mel, plot_spec, save_alignment
 
 
 def write_training_result(global_step: int, id: List[int], text: List[str], predicted_mel: List[np.ndarray],
